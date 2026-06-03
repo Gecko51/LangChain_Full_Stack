@@ -178,7 +178,7 @@ export function ChatInterface() {
           ) : (
             <Button
               size="icon"
-              className="size-10"
+              className="size-10 shadow-lg shadow-primary/30"
               onClick={handleSend}
               disabled={!input.trim()}
             >

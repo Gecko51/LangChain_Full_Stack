@@ -4,11 +4,14 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function Home() {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="relative flex h-dvh flex-col overflow-hidden">
+      {/* Subtle violet glow behind everything. */}
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(60%_45%_at_50%_0%,oklch(0.62_0.23_292/0.10),transparent)]" />
+
       {/* ---- Top bar ---- */}
       <header className="flex items-center justify-between border-b px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <div className="size-7 rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500" />
+          <div className="size-7 rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/40" />
           <h1 className="text-sm font-semibold">Agent Playground</h1>
           <span className="text-muted-foreground hidden text-xs sm:inline">
             · LangChain × OpenRouter
