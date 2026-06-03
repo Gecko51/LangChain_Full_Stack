@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
+import { SystemPromptField } from "@/components/SystemPromptField";
 import { useAgentConfig } from "@/hooks/useAgentConfig";
 import type { OutputParser } from "@/types/agent";
 
@@ -91,11 +91,9 @@ export function AgentConfig() {
         <AccordionItem value="prompt">
           <AccordionTrigger>System Prompt</AccordionTrigger>
           <AccordionContent className="space-y-2">
-            <Textarea
+            <SystemPromptField
               value={config.system_prompt}
-              onChange={(e) => setConfig({ system_prompt: e.target.value })}
-              rows={5}
-              className="font-mono text-xs"
+              onChange={(v) => setConfig({ system_prompt: v })}
             />
             <Button
               variant="ghost"
