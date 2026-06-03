@@ -1,0 +1,194 @@
+"use client";
+
+import { Loader2, RotateCcw, Save } from "lucide-react";
+
+import { ModelSelector } from "@/components/ModelSelector";
+import { ToolsPanel } from "@/components/ToolsPanel";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { useAgentConfig } from "@/hooks/useAgentConfig";
+import type { OutputParser } from "@/types/agent";
+
+const DEFAULT_SYSTEM_PROMPT =
+  "You are an expert AI assistant. Answer clearly, concisely, and in a structured way.";
+
+const PARSERS: { value: OutputParser; label: string }[] = [
+  { value: "str", label: "String" },
+  { value: "json", label: "JSON" },
+];
+
+export function AgentConfig() {
+  const { config, setConfig, save, saving, dirty, error } = useAgentConfig();
+
+  const toggleTool = (name: string, on: boolean) => {
+    const set = new Set(config.tools_enabled);
+    if (on) set.add(name);
+    else set.delete(name);
+    setConfig({ tools_enabled: [...set] });
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <Accordion
+        type="multiple"
+        defaultValue={["llm", "prompt"]}
+        className="flex-1 overflow-y-auto px-3"
+      >
+        {/* ---- LLM settings ---- */}
+        <AccordionItem value="llm">
+          <AccordionTrigger>LLM Settings</AccordionTrigger>
+          <AccordionContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Model</Label>
+              <ModelSelector
+                value={config.model}
+                onChange={(v) => setConfig({ model: v })}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Temperature</Label>
+                <span className="text-muted-foreground font-mono text-xs">
+                  {config.temperature.toFixed(1)}
+                </span>
+              </div>
+              <Slider
+                value={[config.temperature]}
+                min={0}
+                max={2}
+                step={0.1}
+                onValueChange={(v) => setConfig({ temperature: v[0] })}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Max tokens</Label>
+                <span className="text-muted-foreground font-mono text-xs">
+                  {config.max_tokens}
+                </span>
+              </div>
+              <Slider
+                value={[config.max_tokens]}
+                min={256}
+                max={8192}
+                step={256}
+                onValueChange={(v) => setConfig({ max_tokens: v[0] })}
+              />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* ---- System prompt ---- */}
+        <AccordionItem value="prompt">
+          <AccordionTrigger>System Prompt</AccordionTrigger>
+          <AccordionContent className="space-y-2">
+            <Textarea
+              value={config.system_prompt}
+              onChange={(e) => setConfig({ system_prompt: e.target.value })}
+              rows={5}
+              className="font-mono text-xs"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfig({ system_prompt: DEFAULT_SYSTEM_PROMPT })}
+            >
+              <RotateCcw className="size-3" />
+              Reset to default
+            </Button>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* ---- Output parser ---- */}
+        <AccordionItem value="parser">
+          <AccordionTrigger>Output Parser</AccordionTrigger>
+          <AccordionContent>
+            <div className="flex gap-2">
+              {PARSERS.map((p) => (
+                <Button
+                  key={p.value}
+                  variant={config.output_parser === p.value ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setConfig({ output_parser: p.value })}
+                >
+                  {p.label}
+                </Button>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 opacity-50"
+                disabled
+                title="Coming in Phase 2"
+              >
+                Pydantic
+              </Button>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* ---- Memory ---- */}
+        <AccordionItem value="memory">
+          <AccordionTrigger>Memory</AccordionTrigger>
+          <AccordionContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label>Enable memory</Label>
+              <Switch
+                checked={config.memory_enabled}
+                onCheckedChange={(v) => setConfig({ memory_enabled: v })}
+              />
+            </div>
+            {config.memory_enabled ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Window (messages)</Label>
+                  <span className="text-muted-foreground font-mono text-xs">
+                    {config.memory_window}
+                  </span>
+                </div>
+                <Slider
+                  value={[config.memory_window]}
+                  min={1}
+                  max={20}
+                  step={1}
+                  onValueChange={(v) => setConfig({ memory_window: v[0] })}
+                />
+              </div>
+            ) : null}
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* ---- Tools ---- */}
+        <AccordionItem value="tools">
+          <AccordionTrigger>Tools</AccordionTrigger>
+          <AccordionContent>
+            <ToolsPanel enabled={config.tools_enabled} onToggle={toggleTool} />
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+
+      {/* ---- Save bar ---- */}
+      <div className="border-t p-3">
+        {error ? <p className="text-destructive mb-2 text-xs">{error}</p> : null}
+        <Button className="w-full" onClick={save} disabled={saving || !dirty}>
+          {saving ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Save className="size-4" />
+          )}
+          {dirty ? "Save & Apply" : "Saved"}
+        </Button>
+      </div>
+    </div>
+  );
+}
