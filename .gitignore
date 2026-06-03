@@ -42,7 +42,7 @@ Thumbs.db
 
 # ===== Playwright MCP (local screenshots/snapshots) =====
 .playwright-mcp/
-/playground-dark.png
+/*.png
 
 # ===== Logs =====
 *.log

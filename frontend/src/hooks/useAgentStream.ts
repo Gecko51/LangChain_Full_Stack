@@ -54,7 +54,10 @@ export function useAgentStream(options: UseAgentStreamOptions) {
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+          // Strip carriage returns: sse-starlette uses CRLF line endings, so
+          // frames are separated by "\r\n\r\n". Normalising to "\n" lets us
+          // split on "\n\n" below.
+          buffer += decoder.decode(value, { stream: true }).replace(/\r/g, "");
           let sep: number;
           while ((sep = buffer.indexOf("\n\n")) !== -1) {
             const frame = buffer.slice(0, sep);
