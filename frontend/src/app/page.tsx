@@ -48,7 +48,9 @@ export default function Home() {
       </div>
 
       {/* ---- Panels: config 1/3 · chat 2/3 on lg; one at a time on mobile ---- */}
-      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-3">
+      {/* grid-rows-1 forces the row to a definite 1fr height so each panel scrolls
+          internally (keeping the chat input fixed) instead of growing with content. */}
+      <main className="grid min-h-0 flex-1 grid-rows-1 grid-cols-1 lg:grid-cols-3">
         <aside
           className={cn(
             "min-h-0 overflow-hidden lg:col-span-1 lg:block lg:border-r",
