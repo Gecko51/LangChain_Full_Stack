@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { AgentConfig } from "@/components/AgentConfig";
 import { ChatInterface } from "@/components/ChatInterface";
+import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +20,7 @@ export default function Home() {
       {/* ---- Top bar ---- */}
       <header className="flex items-center justify-between border-b px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <div className="size-7 rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/40" />
+          <Logo className="size-7 rounded-md shadow-lg shadow-violet-500/40" />
           <h1 className="text-sm font-semibold">Agent Playground</h1>
           <span className="text-muted-foreground hidden text-xs sm:inline">
             · LangChain × OpenRouter
