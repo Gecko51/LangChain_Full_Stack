@@ -34,7 +34,7 @@ export function ChatInterface() {
   const assistantIdRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll to the latest content.
+  // Auto-scroll to the latest content (scrolls the ScrollArea viewport).
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
@@ -112,16 +112,18 @@ export function ChatInterface() {
     try {
       await clearSession(SESSION_ID);
     } catch {
-      // ignore — clearing local state is what matters for the user
+      // ignore — clearing the local state is what matters for the user
     }
   }, [cancel]);
 
   const statusMeta = STATUS_META[status];
 
   return (
+    // h-full comes from the parent grid row (definite height); the three sections
+    // below are: fixed header, scrollable messages (min-h-0!), fixed input.
     <div className="flex h-full flex-col">
-      {/* ---- Header: status + clear ---- */}
-      <div className="flex items-center justify-between border-b px-4 py-2">
+      {/* ---- Header: status + clear (fixed) ---- */}
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Chat</span>
           <Badge className={cn("border-0 text-[10px]", statusMeta.className)}>
@@ -139,8 +141,10 @@ export function ChatInterface() {
         </Button>
       </div>
 
-      {/* ---- Messages ---- */}
-      <ScrollArea className="flex-1">
+      {/* ---- Messages (scrollable) ----
+          min-h-0 lets this flex child shrink below its content so the viewport
+          actually scrolls instead of pushing the input off-screen. */}
+      <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 p-4">
           {messages.length === 0 ? (
             <div className="text-muted-foreground flex h-full flex-col items-center justify-center py-20 text-center text-sm">
@@ -154,8 +158,8 @@ export function ChatInterface() {
         </div>
       </ScrollArea>
 
-      {/* ---- Input ---- */}
-      <div className="border-t p-3">
+      {/* ---- Input (fixed, independent of the messages area) ---- */}
+      <div className="shrink-0 border-t p-3">
         <div className="flex items-end gap-2">
           <Textarea
             value={input}

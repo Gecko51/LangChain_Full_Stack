@@ -41,7 +41,7 @@ export function AgentConfig() {
       <Accordion
         type="multiple"
         defaultValue={["llm", "prompt"]}
-        className="flex-1 overflow-y-auto px-3"
+        className="min-h-0 flex-1 overflow-y-auto px-3"
       >
         {/* ---- LLM settings ---- */}
         <AccordionItem value="llm">
