@@ -3,6 +3,8 @@ import type {
   AgentConfig,
   AppSettings,
   CustomPrompt,
+  MCPServer,
+  McpServerStatus,
   ModelInfo,
   ToolInfo,
 } from "@/types/agent";
@@ -82,5 +84,40 @@ export async function deletePrompt(name: string): Promise<AppSettings> {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`DELETE /prompts failed: ${res.status}`);
+  return res.json();
+}
+
+// ----- MCP servers -----
+
+export async function addMcpServer(server: MCPServer): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/mcp/servers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(server),
+  });
+  if (!res.ok) throw new Error(`POST /mcp/servers failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteMcpServer(name: string): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/mcp/servers/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`DELETE /mcp/servers failed: ${res.status}`);
+  return res.json();
+}
+
+export async function toggleMcpServer(name: string): Promise<AppSettings> {
+  const res = await fetch(
+    `${BACKEND_URL}/mcp/servers/${encodeURIComponent(name)}/toggle`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw new Error(`POST /mcp/servers/toggle failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchMcpTools(): Promise<McpServerStatus[]> {
+  const res = await fetch(`${BACKEND_URL}/mcp/tools`);
+  if (!res.ok) throw new Error(`GET /mcp/tools failed: ${res.status}`);
   return res.json();
 }

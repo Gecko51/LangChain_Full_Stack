@@ -12,6 +12,8 @@ langchain-core>=0.3.0
 langgraph>=0.2.0
 # Provides the "openrouter:" provider used by init_chat_model / create_agent
 langchain-openrouter>=0.1.0
+# MCP tools (Phase 2): connect MCP servers and expose their tools to the agent
+langchain-mcp-adapters>=0.2.0
 
 # ===== Built-in tools =====
 ddgs>=6.0.0          # DuckDuckGo search backend for the web_search tool

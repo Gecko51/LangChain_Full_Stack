@@ -4,6 +4,7 @@ import { Check, KeyRound, Loader2, Plus, Settings2, Trash2 } from "lucide-react"
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { MCPPanel } from "@/components/MCPPanel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -78,7 +79,7 @@ export function SettingsDialog() {
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            OpenRouter API key and reusable prompts. MCP tools are coming soon.
+            OpenRouter API key, reusable prompts, and MCP tool servers.
           </DialogDescription>
         </DialogHeader>
 
@@ -90,7 +91,7 @@ export function SettingsDialog() {
             <TabsTrigger value="prompts" className="flex-1">
               Custom Prompts
             </TabsTrigger>
-            <TabsTrigger value="mcp" className="flex-1" disabled>
+            <TabsTrigger value="mcp" className="flex-1">
               MCP
             </TabsTrigger>
           </TabsList>
@@ -193,6 +194,11 @@ export function SettingsDialog() {
                 Add prompt
               </Button>
             </div>
+          </TabsContent>
+
+          {/* ---- MCP servers ---- */}
+          <TabsContent value="mcp">
+            <MCPPanel />
           </TabsContent>
         </Tabs>
       </DialogContent>

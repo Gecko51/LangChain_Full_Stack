@@ -1,4 +1,4 @@
-"""User settings: OpenRouter API key + custom prompts (slash commands).
+"""User settings: OpenRouter API key, custom prompts, and MCP servers.
 
 Persisted to ``settings.json`` (git-ignored). The API key is stored here so it can
 be set from the UI; it is never sent back to the client in plain text.
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,9 +21,21 @@ class CustomPrompt(BaseModel):
     content: str = Field(min_length=1)
 
 
+class MCPServer(BaseModel):
+    """An MCP server whose tools are merged into the agent when enabled."""
+
+    name: str = Field(min_length=1, max_length=40)
+    transport: Literal["stdio", "sse", "http"] = "stdio"
+    command: str | None = None  # stdio: e.g. "npx"
+    args: list[str] = Field(default_factory=list)  # stdio: e.g. ["-y", "@.../server-filesystem", "."]
+    url: str | None = None  # sse / http
+    enabled: bool = True
+
+
 class Settings(BaseModel):
     openrouter_api_key: str | None = None
     custom_prompts: list[CustomPrompt] = Field(default_factory=list)
+    mcp_servers: list[MCPServer] = Field(default_factory=list)
 
 
 class SettingsStore:
@@ -47,12 +60,15 @@ class SettingsStore:
     def get(self) -> Settings:
         return self._settings
 
+    # ----- API key -----
+
     def set_api_key(self, key: str | None) -> None:
         self._settings.openrouter_api_key = (key or "").strip() or None
         self._save()
 
+    # ----- Custom prompts -----
+
     def upsert_prompt(self, prompt: CustomPrompt) -> None:
-        # Replace a prompt with the same name, otherwise append.
         kept = [p for p in self._settings.custom_prompts if p.name != prompt.name]
         kept.append(prompt)
         self._settings.custom_prompts = kept
@@ -62,6 +78,26 @@ class SettingsStore:
         self._settings.custom_prompts = [
             p for p in self._settings.custom_prompts if p.name != name
         ]
+        self._save()
+
+    # ----- MCP servers -----
+
+    def upsert_mcp_server(self, server: MCPServer) -> None:
+        kept = [s for s in self._settings.mcp_servers if s.name != server.name]
+        kept.append(server)
+        self._settings.mcp_servers = kept
+        self._save()
+
+    def delete_mcp_server(self, name: str) -> None:
+        self._settings.mcp_servers = [
+            s for s in self._settings.mcp_servers if s.name != name
+        ]
+        self._save()
+
+    def toggle_mcp_server(self, name: str) -> None:
+        for s in self._settings.mcp_servers:
+            if s.name == name:
+                s.enabled = not s.enabled
         self._save()
 
 

@@ -22,9 +22,10 @@ from sse_starlette.sse import EventSourceResponse  # noqa: E402
 
 from agent import stream_chat  # noqa: E402
 from config import AgentConfig, config_store  # noqa: E402
+from mcp_manager import discover  # noqa: E402
 from schemas import ChatRequest  # noqa: E402
 from sessions import session_store  # noqa: E402
-from settings import CustomPrompt, settings_store  # noqa: E402
+from settings import CustomPrompt, MCPServer, settings_store  # noqa: E402
 from tools import list_tools  # noqa: E402
 
 app = FastAPI(title="Agent Playground API", version="1.0.0")
@@ -74,6 +75,7 @@ def _public_settings() -> dict:
             else ("env" if os.environ.get("OPENROUTER_API_KEY") else None)
         ),
         "custom_prompts": [p.model_dump() for p in s.custom_prompts],
+        "mcp_servers": [m.model_dump() for m in s.mcp_servers],
     }
 
 
@@ -125,7 +127,7 @@ async def get_models() -> list[dict]:
 
 @app.get("/settings")
 def get_settings() -> dict:
-    """Return non-secret settings (API-key presence + custom prompts)."""
+    """Return non-secret settings (API-key presence, custom prompts, MCP servers)."""
     return _public_settings()
 
 
@@ -157,6 +159,42 @@ def delete_prompt(name: str) -> dict:
     """Delete a custom prompt by name."""
     settings_store.delete_prompt(name)
     return _public_settings()
+
+
+# ----- MCP servers -----
+
+
+@app.get("/mcp/servers")
+def list_mcp_servers() -> dict:
+    """Return the configured MCP servers (part of the settings payload)."""
+    return _public_settings()
+
+
+@app.post("/mcp/servers")
+def upsert_mcp_server(server: MCPServer) -> dict:
+    """Add or update an MCP server."""
+    settings_store.upsert_mcp_server(server)
+    return _public_settings()
+
+
+@app.delete("/mcp/servers/{name}")
+def delete_mcp_server(name: str) -> dict:
+    """Remove an MCP server."""
+    settings_store.delete_mcp_server(name)
+    return _public_settings()
+
+
+@app.post("/mcp/servers/{name}/toggle")
+def toggle_mcp_server(name: str) -> dict:
+    """Enable/disable an MCP server."""
+    settings_store.toggle_mcp_server(name)
+    return _public_settings()
+
+
+@app.get("/mcp/tools")
+async def mcp_tools() -> list[dict]:
+    """Connect to each enabled MCP server and report its tools (or error)."""
+    return await discover(settings_store.get().mcp_servers)
 
 
 @app.post("/chat")

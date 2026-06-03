@@ -55,9 +55,29 @@ export interface CustomPrompt {
   content: string;
 }
 
+export type McpTransport = "stdio" | "sse" | "http";
+
+export interface MCPServer {
+  name: string;
+  transport: McpTransport;
+  command?: string | null; // stdio
+  args?: string[]; // stdio
+  url?: string | null; // sse / http
+  enabled: boolean;
+}
+
+// Discovery result from GET /mcp/tools (one entry per server).
+export interface McpServerStatus {
+  name: string;
+  enabled: boolean;
+  tools: string[];
+  error: string | null;
+}
+
 export interface AppSettings {
   has_api_key: boolean;
   api_key_hint: string | null; // e.g. "…74a4" — never the full key
   api_key_source: "settings" | "env" | null;
   custom_prompts: CustomPrompt[];
+  mcp_servers: MCPServer[];
 }

@@ -5,6 +5,8 @@ Uses the modern LangChain stack:
 - ``create_agent(...)`` for the tool-calling agent (built on LangGraph),
 - ``agent.astream(stream_mode=["messages", "updates"])`` to get both incremental
   tokens AND completed tool calls in one loop.
+
+Tools = enabled built-in tools + tools from enabled MCP servers.
 """
 from __future__ import annotations
 
@@ -21,8 +23,10 @@ from langchain_core.messages import (
     HumanMessage,
     ToolMessage,
 )
+from langchain_core.tools import BaseTool
 
 from config import AgentConfig
+from mcp_manager import get_mcp_tools
 from sessions import session_store
 from settings import settings_store
 from tools import get_enabled_tools
@@ -37,12 +41,18 @@ def _resolve_api_key() -> str | None:
     return settings_store.get().openrouter_api_key or _ENV_OPENROUTER_KEY
 
 
-def build_agent(config: AgentConfig):
-    """Create a fresh agent from the given config.
+async def gather_tools(config: AgentConfig) -> list[BaseTool]:
+    """Enabled built-in tools + tools from enabled MCP servers."""
+    builtin = get_enabled_tools(config.tools_enabled)
+    mcp = await get_mcp_tools(settings_store.get().mcp_servers)
+    return [*builtin, *mcp]
 
-    The model carries temperature/max_tokens; the agent wires in the system prompt and
-    the enabled tools. The OpenRouter provider reads ``OPENROUTER_API_KEY`` from the
-    environment, so we set it from the resolved key just before building.
+
+def build_agent(config: AgentConfig, tools: list[BaseTool]):
+    """Create a fresh agent from the given config and pre-gathered tools.
+
+    The OpenRouter provider reads ``OPENROUTER_API_KEY`` from the environment, so we
+    set it from the resolved key just before building.
     """
     key = _resolve_api_key()
     if key:
@@ -53,7 +63,6 @@ def build_agent(config: AgentConfig):
         temperature=config.temperature,
         max_tokens=config.max_tokens,
     )
-    tools = get_enabled_tools(config.tools_enabled)
     return create_agent(model=model, tools=tools, system_prompt=config.system_prompt)
 
 
@@ -66,7 +75,12 @@ async def stream_chat(
     config: AgentConfig, message: str, session_id: str
 ) -> AsyncIterator[dict]:
     """Yield SSE events for one chat turn: token / tool_start / tool_end / done / error."""
-    agent = build_agent(config)
+    try:
+        tools = await gather_tools(config)
+        agent = build_agent(config, tools)
+    except Exception as exc:  # noqa: BLE001
+        yield _event("error", {"error": "build_error", "detail": str(exc)})
+        return
 
     # Input = prior history (trimmed to the window when memory is on) + the new message.
     history: list[BaseMessage] = (
