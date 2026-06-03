@@ -1,5 +1,11 @@
 // Typed fetch helpers for the backend HTTP API.
-import type { AgentConfig, ModelInfo, ToolInfo } from "@/types/agent";
+import type {
+  AgentConfig,
+  AppSettings,
+  CustomPrompt,
+  ModelInfo,
+  ToolInfo,
+} from "@/types/agent";
 
 // Public backend URL (set at build/deploy time). Defaults to local dev.
 export const BACKEND_URL =
@@ -35,4 +41,46 @@ export async function fetchTools(): Promise<ToolInfo[]> {
 
 export async function clearSession(sessionId: string): Promise<void> {
   await fetch(`${BACKEND_URL}/sessions/${sessionId}`, { method: "DELETE" });
+}
+
+// ----- Settings: API key + custom prompts -----
+
+export async function fetchSettings(): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/settings`);
+  if (!res.ok) throw new Error(`GET /settings failed: ${res.status}`);
+  return res.json();
+}
+
+export async function setApiKey(api_key: string): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/settings/api-key`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key }),
+  });
+  if (!res.ok) throw new Error(`PUT /settings/api-key failed: ${res.status}`);
+  return res.json();
+}
+
+export async function clearApiKey(): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/settings/api-key`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`DELETE /settings/api-key failed: ${res.status}`);
+  return res.json();
+}
+
+export async function addPrompt(prompt: CustomPrompt): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/prompts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prompt),
+  });
+  if (!res.ok) throw new Error(`POST /prompts failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deletePrompt(name: string): Promise<AppSettings> {
+  const res = await fetch(`${BACKEND_URL}/prompts/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`DELETE /prompts failed: ${res.status}`);
+  return res.json();
 }

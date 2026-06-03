@@ -7,6 +7,7 @@ import "highlight.js/styles/github-dark.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { AgentConfigProvider } from "@/hooks/useAgentConfig";
+import { SettingsProvider } from "@/hooks/useSettings";
 
 // Font CSS variables consumed by globals.css (@theme inline).
 const geistSans = Geist({ variable: "--font-sans", subsets: ["latin"] });
@@ -34,7 +35,9 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          <AgentConfigProvider>{children}</AgentConfigProvider>
+          <SettingsProvider>
+            <AgentConfigProvider>{children}</AgentConfigProvider>
+          </SettingsProvider>
           <Toaster />
         </ThemeProvider>
       </body>

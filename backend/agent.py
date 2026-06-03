@@ -5,14 +5,11 @@ Uses the modern LangChain stack:
 - ``create_agent(...)`` for the tool-calling agent (built on LangGraph),
 - ``agent.astream(stream_mode=["messages", "updates"])`` to get both incremental
   tokens AND completed tool calls in one loop.
-
-The streamed chunk shape follows the official LangChain streaming docs (2026). It is
-verified against the installed library at build time; adjust the parsing here if the
-installed version differs.
 """
 from __future__ import annotations
 
 import json
+import os
 from typing import AsyncIterator
 
 from langchain.agents import create_agent
@@ -27,16 +24,30 @@ from langchain_core.messages import (
 
 from config import AgentConfig
 from sessions import session_store
+from settings import settings_store
 from tools import get_enabled_tools
+
+# The API key from the environment (.env), captured once at import. The UI can
+# override it via settings; that takes precedence when present.
+_ENV_OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY")
+
+
+def _resolve_api_key() -> str | None:
+    """The UI-provided key wins; otherwise fall back to the .env key."""
+    return settings_store.get().openrouter_api_key or _ENV_OPENROUTER_KEY
 
 
 def build_agent(config: AgentConfig):
     """Create a fresh agent from the given config.
 
     The model carries temperature/max_tokens; the agent wires in the system prompt and
-    the enabled tools. ``OPENROUTER_API_KEY`` is read from the environment by the
-    OpenRouter provider.
+    the enabled tools. The OpenRouter provider reads ``OPENROUTER_API_KEY`` from the
+    environment, so we set it from the resolved key just before building.
     """
+    key = _resolve_api_key()
+    if key:
+        os.environ["OPENROUTER_API_KEY"] = key
+
     model = init_chat_model(
         f"openrouter:{config.model}",
         temperature=config.temperature,

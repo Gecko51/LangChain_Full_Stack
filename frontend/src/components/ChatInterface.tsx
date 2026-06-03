@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useAgentStream } from "@/hooks/useAgentStream";
+import { useSettings } from "@/hooks/useSettings";
 import { clearSession } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { AgentStatus, ChatMessage, ToolCall } from "@/types/agent";
@@ -28,16 +29,33 @@ const STATUS_META: Record<AgentStatus, { label: string; className: string }> = {
 };
 
 export function ChatInterface() {
+  const { settings } = useSettings();
+  const prompts = settings.custom_prompts;
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<AgentStatus>("idle");
   const assistantIdRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Auto-scroll to the latest content (scrolls the ScrollArea viewport).
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
+
+  // ----- Slash-command menu for custom prompts -----
+  const slashQuery = input.startsWith("/") ? input.slice(1).toLowerCase() : null;
+  const slashMatches =
+    slashQuery !== null
+      ? prompts.filter((p) => p.name.toLowerCase().includes(slashQuery))
+      : [];
+  const showSlash = slashQuery !== null && slashMatches.length > 0;
+
+  const selectPrompt = (content: string) => {
+    setInput(content);
+    inputRef.current?.focus();
+  };
 
   // Patch the in-flight assistant message by id.
   const patchAssistant = useCallback((fn: (m: ChatMessage) => ChatMessage) => {
@@ -160,35 +178,61 @@ export function ChatInterface() {
 
       {/* ---- Input (fixed, independent of the messages area) ---- */}
       <div className="shrink-0 border-t p-3">
-        <div className="flex items-end gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter sends; Shift+Enter adds a newline.
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder="Type a message… (Enter to send, Shift+Enter for a new line)"
-            rows={1}
-            className="max-h-40 min-h-10 flex-1 resize-none"
-          />
-          {isStreaming ? (
-            <Button variant="secondary" size="icon" className="size-10" onClick={cancel}>
-              <Square className="size-4" />
-            </Button>
-          ) : (
-            <Button
-              size="icon"
-              className="size-10 shadow-lg shadow-primary/30"
-              onClick={handleSend}
-              disabled={!input.trim()}
-            >
-              <Send className="size-4" />
-            </Button>
-          )}
+        <div className="relative">
+          {/* Slash-command menu (custom prompts) */}
+          {showSlash ? (
+            <div className="bg-popover absolute bottom-full left-0 mb-2 max-h-48 w-full overflow-y-auto rounded-lg border p-1 shadow-lg">
+              <p className="text-muted-foreground px-2 py-1 text-[10px] uppercase">
+                Custom prompts
+              </p>
+              {slashMatches.map((p) => (
+                <button
+                  key={p.name}
+                  onClick={() => selectPrompt(p.content)}
+                  className="hover:bg-accent flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
+                >
+                  <span className="text-primary shrink-0 font-mono text-sm">/{p.name}</span>
+                  <span className="text-muted-foreground truncate text-xs">{p.content}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="flex items-end gap-2">
+            <Textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  // If the slash menu is open, Enter picks the top prompt instead.
+                  if (showSlash) {
+                    selectPrompt(slashMatches[0].content);
+                    return;
+                  }
+                  handleSend();
+                }
+              }}
+              placeholder="Type a message…  (/ for saved prompts · Shift+Enter = new line)"
+              rows={1}
+              className="max-h-40 min-h-10 flex-1 resize-none"
+            />
+            {isStreaming ? (
+              <Button variant="secondary" size="icon" className="size-10" onClick={cancel}>
+                <Square className="size-4" />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                className="size-10 shadow-lg shadow-primary/30"
+                onClick={handleSend}
+                disabled={!input.trim()}
+              >
+                <Send className="size-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

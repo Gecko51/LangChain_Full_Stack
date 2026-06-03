@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import { SystemPromptField } from "@/components/SystemPromptField";
 import { useAgentConfig } from "@/hooks/useAgentConfig";
 import type { OutputParser } from "@/types/agent";
@@ -38,6 +39,13 @@ export function AgentConfig() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* Settings: API key, custom prompts, MCP (soon) */}
+      <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
+        <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          Configuration
+        </span>
+        <SettingsDialog />
+      </div>
       <Accordion
         type="multiple"
         defaultValue={["llm", "prompt"]}

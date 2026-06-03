@@ -47,3 +47,17 @@ export interface ChatMessage {
 
 // Agent lifecycle status shown in the chat header.
 export type AgentStatus = "idle" | "thinking" | "streaming" | "error";
+
+// ----- Settings (API key + custom prompts) -----
+
+export interface CustomPrompt {
+  name: string; // invoked from the chat with /<name>
+  content: string;
+}
+
+export interface AppSettings {
+  has_api_key: boolean;
+  api_key_hint: string | null; // e.g. "…74a4" — never the full key
+  api_key_source: "settings" | "env" | null;
+  custom_prompts: CustomPrompt[];
+}

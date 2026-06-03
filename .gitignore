@@ -30,6 +30,7 @@ dist/
 
 # ===== Backend runtime state =====
 backend/config.json
+backend/settings.json
 
 # ===== Editors / OS =====
 .vscode/
