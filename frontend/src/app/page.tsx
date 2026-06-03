@@ -1,8 +1,16 @@
+"use client";
+
+import { useState } from "react";
+
 import { AgentConfig } from "@/components/AgentConfig";
 import { ChatInterface } from "@/components/ChatInterface";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { cn } from "@/lib/utils";
 
 export default function Home() {
+  // On small screens we show one panel at a time; lg shows both side by side.
+  const [tab, setTab] = useState<"config" | "chat">("chat");
+
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden">
       {/* Subtle violet glow behind everything. */}
@@ -20,12 +28,40 @@ export default function Home() {
         <ThemeToggle />
       </header>
 
-      {/* ---- Two columns: config (1/3) · chat (2/3) ---- */}
+      {/* ---- Mobile tab switch (hidden on lg, where both panels are visible) ---- */}
+      <div className="flex border-b lg:hidden">
+        {(["config", "chat"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "flex-1 py-2 text-sm font-medium capitalize transition-colors",
+              tab === t
+                ? "border-primary text-foreground border-b-2"
+                : "text-muted-foreground",
+            )}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* ---- Panels: config 1/3 · chat 2/3 on lg; one at a time on mobile ---- */}
       <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-3">
-        <aside className="min-h-0 overflow-hidden border-b lg:col-span-1 lg:border-r lg:border-b-0">
+        <aside
+          className={cn(
+            "min-h-0 overflow-hidden lg:col-span-1 lg:block lg:border-r",
+            tab === "config" ? "block" : "hidden",
+          )}
+        >
           <AgentConfig />
         </aside>
-        <section className="min-h-0 overflow-hidden lg:col-span-2">
+        <section
+          className={cn(
+            "min-h-0 overflow-hidden lg:col-span-2 lg:block",
+            tab === "chat" ? "block" : "hidden",
+          )}
+        >
           <ChatInterface />
         </section>
       </main>

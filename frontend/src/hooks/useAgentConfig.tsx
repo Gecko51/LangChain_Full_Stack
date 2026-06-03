@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 
 import { fetchConfig, saveConfig } from "@/lib/api";
 import type { AgentConfig } from "@/types/agent";
@@ -75,8 +76,11 @@ export function AgentConfigProvider({ children }: { children: ReactNode }) {
     try {
       setConfigState(await saveConfig(config));
       setDirty(false);
+      toast.success("Configuration applied");
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setError(message);
+      toast.error(`Failed to save: ${message}`);
     } finally {
       setSaving(false);
     }

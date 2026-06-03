@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 import { AgentConfigProvider } from "@/hooks/useAgentConfig";
 
 // Font CSS variables consumed by globals.css (@theme inline).
@@ -32,6 +33,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AgentConfigProvider>{children}</AgentConfigProvider>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

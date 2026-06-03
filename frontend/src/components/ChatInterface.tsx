@@ -145,7 +145,7 @@ export function ChatInterface() {
           {messages.length === 0 ? (
             <div className="text-muted-foreground flex h-full flex-col items-center justify-center py-20 text-center text-sm">
               <p className="mb-1 text-base">👋 Start a conversation</p>
-              <p>Tune the agent on the left, then send a message.</p>
+              <p>Tune the agent, then send a message.</p>
             </div>
           ) : (
             messages.map((m) => <MessageBubble key={m.id} message={m} />)
