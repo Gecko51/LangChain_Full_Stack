@@ -52,46 +52,63 @@ DEFAULT_CONFIG = AgentConfig(
 
 
 class ConfigStore:
-    """Holds the agent config (memory + Supabase + local JSON backup)."""
+    """Per-user agent config (memory cache + Supabase + local JSON backup).
+
+    Each user gets their own config; nothing is shared between accounts.
+    """
 
     def __init__(self) -> None:
-        self._config = self._load()
-        # Mirror the active state to Supabase (initial sync from local JSON).
-        self._save()
+        # username -> AgentConfig (lazily loaded on first access).
+        self._cache: dict[str, AgentConfig] = {}
 
-    def _load(self) -> AgentConfig:
-        # 1) Supabase, 2) local JSON file, 3) defaults.
-        doc = db.load_doc("agent_config")
+    # ----- local backup: { username: config_dict } -----
+
+    def _load_local_all(self) -> dict:
+        if CONFIG_FILE.exists():
+            try:
+                d = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                # Ignore the legacy flat format (a single config, not keyed by user).
+                if isinstance(d, dict) and "system_prompt" not in d:
+                    return d
+            except Exception:
+                pass
+        return {}
+
+    def _save_local(self, username: str, config: AgentConfig) -> None:
+        try:
+            allcfg = self._load_local_all()
+            allcfg[username] = config.model_dump()
+            CONFIG_FILE.write_text(json.dumps(allcfg, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load(self, username: str) -> AgentConfig:
+        # 1) Supabase, 2) local JSON, 3) defaults.
+        doc = db.load_doc("agent_config", username)
         if doc:
             try:
                 return AgentConfig(**doc)
             except Exception:
                 pass
-        if CONFIG_FILE.exists():
+        local = self._load_local_all().get(username)
+        if local:
             try:
-                return AgentConfig(**json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
+                return AgentConfig(**local)
             except Exception:
                 pass
         return DEFAULT_CONFIG.model_copy(deep=True)
 
-    def _save(self) -> None:
-        # Local backup always; Supabase best-effort.
-        try:
-            CONFIG_FILE.write_text(
-                self._config.model_dump_json(indent=2), encoding="utf-8"
-            )
-        except Exception:
-            pass
-        db.save_doc("agent_config", self._config.model_dump())
+    def get(self, username: str) -> AgentConfig:
+        if username not in self._cache:
+            self._cache[username] = self._load(username)
+        return self._cache[username]
 
-    def get(self) -> AgentConfig:
-        return self._config
-
-    def update(self, config: AgentConfig) -> AgentConfig:
-        """Replace the config (hot-reload) and persist it."""
-        self._config = config
-        self._save()
-        return self._config
+    def update(self, username: str, config: AgentConfig) -> AgentConfig:
+        """Replace a user's config (hot-reload) and persist it."""
+        self._cache[username] = config
+        db.save_doc("agent_config", username, config.model_dump())
+        self._save_local(username, config)
+        return config
 
 
 # Module-level singleton imported across the app.

@@ -21,11 +21,15 @@ def test_config_store_round_trip(tmp_path, monkeypatch):
     # Redirect the store's file to a temp path so we don't touch the real config.json.
     monkeypatch.setattr(config_module, "CONFIG_FILE", tmp_path / "config.json")
     store = ConfigStore()
-    store.update(DEFAULT_CONFIG.model_copy(update={"temperature": 1.3, "memory_window": 5}))
-    # A fresh store must load the persisted values.
+    store.update(
+        "alice", DEFAULT_CONFIG.model_copy(update={"temperature": 1.3, "memory_window": 5})
+    )
+    # A fresh store must load the persisted values for that user.
     reloaded = ConfigStore()
-    assert reloaded.get().temperature == 1.3
-    assert reloaded.get().memory_window == 5
+    assert reloaded.get("alice").temperature == 1.3
+    assert reloaded.get("alice").memory_window == 5
+    # A different user gets defaults, not alice's config (isolation).
+    assert reloaded.get("bob").temperature == DEFAULT_CONFIG.temperature
 
 
 def test_calculator_tool():

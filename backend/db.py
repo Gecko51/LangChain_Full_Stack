@@ -4,8 +4,8 @@ If ``SUPABASE_URL`` + ``SUPABASE_KEY`` are set, the stores persist to Supabase;
 otherwise — or on any error (e.g. a paused free-tier project) — they fall back to
 local JSON files / in-memory. Every call here is best-effort and never raises.
 
-Document-style schema: ``agent_config`` / ``app_settings`` keep a single JSONB row
-(id = 1); ``chat_sessions`` keeps one row per session with the messages as JSONB.
+Per-user schema: ``agent_config`` / ``app_settings`` keep one JSONB row per username;
+``chat_sessions`` keeps one row per (username, session_id) with the messages as JSONB.
 """
 from __future__ import annotations
 
@@ -46,27 +46,36 @@ def enabled() -> bool:
     return _get_client() is not None
 
 
-# ----- single-row documents (agent_config, app_settings) -----
+# ----- per-user documents (agent_config, app_settings) -----
 
 
-def load_doc(table: str) -> dict | None:
+def load_doc(table: str, username: str) -> dict | None:
+    """The user's document for ``table``, or None."""
     client = _get_client()
     if not client:
         return None
     try:
-        resp = client.table(table).select("data").eq("id", 1).limit(1).execute()
+        resp = (
+            client.table(table)
+            .select("data")
+            .eq("username", username)
+            .limit(1)
+            .execute()
+        )
         rows = resp.data or []
         return rows[0]["data"] if rows else None
     except Exception:
         return None
 
 
-def save_doc(table: str, data: dict) -> bool:
+def save_doc(table: str, username: str, data: dict) -> bool:
     client = _get_client()
     if not client:
         return False
     try:
-        client.table(table).upsert({"id": 1, "data": data}).execute()
+        client.table(table).upsert(
+            {"username": username, "data": data}, on_conflict="username"
+        ).execute()
         return True
     except Exception:
         return False
@@ -75,7 +84,7 @@ def save_doc(table: str, data: dict) -> bool:
 # ----- chat sessions -----
 
 
-def load_session(session_id: str) -> list | None:
+def load_session(username: str, session_id: str) -> list | None:
     client = _get_client()
     if not client:
         return None
@@ -83,6 +92,7 @@ def load_session(session_id: str) -> list | None:
         resp = (
             client.table("chat_sessions")
             .select("messages")
+            .eq("username", username)
             .eq("session_id", session_id)
             .limit(1)
             .execute()
@@ -93,25 +103,28 @@ def load_session(session_id: str) -> list | None:
         return None
 
 
-def save_session(session_id: str, messages: list) -> bool:
+def save_session(username: str, session_id: str, messages: list) -> bool:
     client = _get_client()
     if not client:
         return False
     try:
         client.table("chat_sessions").upsert(
-            {"session_id": session_id, "messages": messages}
+            {"username": username, "session_id": session_id, "messages": messages},
+            on_conflict="username,session_id",
         ).execute()
         return True
     except Exception:
         return False
 
 
-def delete_session(session_id: str) -> bool:
+def delete_session(username: str, session_id: str) -> bool:
     client = _get_client()
     if not client:
         return False
     try:
-        client.table("chat_sessions").delete().eq("session_id", session_id).execute()
+        client.table("chat_sessions").delete().eq("username", username).eq(
+            "session_id", session_id
+        ).execute()
         return True
     except Exception:
         return False

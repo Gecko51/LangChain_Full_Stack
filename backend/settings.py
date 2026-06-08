@@ -42,79 +42,102 @@ class Settings(BaseModel):
 
 
 class SettingsStore:
-    """Holds the settings (memory + Supabase + local JSON backup)."""
+    """Per-user settings (memory cache + Supabase + local JSON backup).
+
+    Each account's API key, prompts and MCP servers are private to that account.
+    """
 
     def __init__(self) -> None:
-        self._settings = self._load()
-        # Mirror the active state to Supabase (initial sync from local JSON).
-        self._save()
+        # username -> Settings (lazily loaded on first access).
+        self._cache: dict[str, Settings] = {}
 
-    def _load(self) -> Settings:
-        # 1) Supabase, 2) local JSON file, 3) empty defaults.
-        doc = db.load_doc("app_settings")
+    # ----- local backup: { username: settings_dict } -----
+
+    def _load_local_all(self) -> dict:
+        if SETTINGS_FILE.exists():
+            try:
+                d = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+                # Ignore the legacy flat format (single settings, not keyed by user).
+                if isinstance(d, dict) and "custom_prompts" not in d:
+                    return d
+            except Exception:
+                pass
+        return {}
+
+    def _save_local(self, username: str, settings: Settings) -> None:
+        try:
+            allset = self._load_local_all()
+            allset[username] = settings.model_dump()
+            SETTINGS_FILE.write_text(json.dumps(allset, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load(self, username: str) -> Settings:
+        # 1) Supabase, 2) local JSON, 3) empty defaults.
+        doc = db.load_doc("app_settings", username)
         if doc:
             try:
                 return Settings(**doc)
             except Exception:
                 pass
-        if SETTINGS_FILE.exists():
+        local = self._load_local_all().get(username)
+        if local:
             try:
-                return Settings(**json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
+                return Settings(**local)
             except Exception:
                 pass
         return Settings()
 
-    def _save(self) -> None:
-        try:
-            SETTINGS_FILE.write_text(
-                self._settings.model_dump_json(indent=2), encoding="utf-8"
-            )
-        except Exception:
-            pass
-        db.save_doc("app_settings", self._settings.model_dump())
+    def get(self, username: str) -> Settings:
+        if username not in self._cache:
+            self._cache[username] = self._load(username)
+        return self._cache[username]
 
-    def get(self) -> Settings:
-        return self._settings
+    def _save(self, username: str) -> None:
+        s = self._cache[username]
+        db.save_doc("app_settings", username, s.model_dump())
+        self._save_local(username, s)
 
     # ----- API key -----
 
-    def set_api_key(self, key: str | None) -> None:
-        self._settings.openrouter_api_key = (key or "").strip() or None
-        self._save()
+    def set_api_key(self, username: str, key: str | None) -> None:
+        self.get(username).openrouter_api_key = (key or "").strip() or None
+        self._save(username)
 
     # ----- Custom prompts -----
 
-    def upsert_prompt(self, prompt: CustomPrompt) -> None:
-        kept = [p for p in self._settings.custom_prompts if p.name != prompt.name]
+    def upsert_prompt(self, username: str, prompt: CustomPrompt) -> None:
+        s = self.get(username)
+        kept = [p for p in s.custom_prompts if p.name != prompt.name]
         kept.append(prompt)
-        self._settings.custom_prompts = kept
-        self._save()
+        s.custom_prompts = kept
+        self._save(username)
 
-    def delete_prompt(self, name: str) -> None:
-        self._settings.custom_prompts = [
-            p for p in self._settings.custom_prompts if p.name != name
-        ]
-        self._save()
+    def delete_prompt(self, username: str, name: str) -> None:
+        s = self.get(username)
+        s.custom_prompts = [p for p in s.custom_prompts if p.name != name]
+        self._save(username)
 
     # ----- MCP servers -----
 
-    def upsert_mcp_server(self, server: MCPServer) -> None:
-        kept = [s for s in self._settings.mcp_servers if s.name != server.name]
+    def upsert_mcp_server(self, username: str, server: MCPServer) -> None:
+        s = self.get(username)
+        kept = [x for x in s.mcp_servers if x.name != server.name]
         kept.append(server)
-        self._settings.mcp_servers = kept
-        self._save()
+        s.mcp_servers = kept
+        self._save(username)
 
-    def delete_mcp_server(self, name: str) -> None:
-        self._settings.mcp_servers = [
-            s for s in self._settings.mcp_servers if s.name != name
-        ]
-        self._save()
+    def delete_mcp_server(self, username: str, name: str) -> None:
+        s = self.get(username)
+        s.mcp_servers = [x for x in s.mcp_servers if x.name != name]
+        self._save(username)
 
-    def toggle_mcp_server(self, name: str) -> None:
-        for s in self._settings.mcp_servers:
-            if s.name == name:
-                s.enabled = not s.enabled
-        self._save()
+    def toggle_mcp_server(self, username: str, name: str) -> None:
+        s = self.get(username)
+        for x in s.mcp_servers:
+            if x.name == name:
+                x.enabled = not x.enabled
+        self._save(username)
 
 
 # Module-level singleton imported across the app.

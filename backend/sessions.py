@@ -23,41 +23,48 @@ def _deserialize(d: dict) -> BaseMessage:
 
 
 class SessionStore:
-    """Keeps an ordered message list per session id."""
+    """Keeps an ordered message list per (username, session_id). Private per user."""
 
     def __init__(self) -> None:
-        self._sessions: dict[str, list[BaseMessage]] = {}
-        self._hydrated: set[str] = set()
+        self._sessions: dict[tuple[str, str], list[BaseMessage]] = {}
+        self._hydrated: set[tuple[str, str]] = set()
 
-    def _ensure_loaded(self, session_id: str) -> None:
+    def _ensure_loaded(self, username: str, session_id: str) -> None:
         """Load a session from Supabase the first time it's touched."""
-        if session_id in self._hydrated:
+        key = (username, session_id)
+        if key in self._hydrated:
             return
-        self._hydrated.add(session_id)
-        if session_id not in self._sessions:
-            stored = db.load_session(session_id)
+        self._hydrated.add(key)
+        if key not in self._sessions:
+            stored = db.load_session(username, session_id)
             if stored:
-                self._sessions[session_id] = [_deserialize(d) for d in stored]
+                self._sessions[key] = [_deserialize(d) for d in stored]
 
-    def history(self, session_id: str, window: int | None = None) -> list[BaseMessage]:
+    def history(
+        self, username: str, session_id: str, window: int | None = None
+    ) -> list[BaseMessage]:
         """Return the session's messages, optionally trimmed to the last ``window``."""
-        self._ensure_loaded(session_id)
-        msgs = self._sessions.get(session_id, [])
+        self._ensure_loaded(username, session_id)
+        msgs = self._sessions.get((username, session_id), [])
         if window is not None and window > 0:
             return msgs[-window:]
         return list(msgs)
 
-    def append(self, session_id: str, *messages: BaseMessage) -> None:
+    def append(self, username: str, session_id: str, *messages: BaseMessage) -> None:
         """Append messages and persist the session (best-effort)."""
-        self._ensure_loaded(session_id)
-        self._sessions.setdefault(session_id, []).extend(messages)
-        db.save_session(session_id, [_serialize(m) for m in self._sessions[session_id]])
+        self._ensure_loaded(username, session_id)
+        key = (username, session_id)
+        self._sessions.setdefault(key, []).extend(messages)
+        db.save_session(
+            username, session_id, [_serialize(m) for m in self._sessions[key]]
+        )
 
-    def clear(self, session_id: str) -> None:
+    def clear(self, username: str, session_id: str) -> None:
         """Forget a session's history (memory + Supabase)."""
-        self._sessions.pop(session_id, None)
-        self._hydrated.discard(session_id)
-        db.delete_session(session_id)
+        key = (username, session_id)
+        self._sessions.pop(key, None)
+        self._hydrated.discard(key)
+        db.delete_session(username, session_id)
 
 
 # Module-level singleton imported across the app.

@@ -64,9 +64,9 @@ class AuthBody(BaseModel):
     password: str
 
 
-def _public_settings() -> dict:
-    """Settings safe to expose to the client (never the raw API key)."""
-    s = settings_store.get()
+def _public_settings(user: str) -> dict:
+    """A user's settings, safe to expose to the client (never the raw API key)."""
+    s = settings_store.get(user)
     key = s.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY")
     hint = None
     if key:
@@ -125,21 +125,23 @@ protected = APIRouter(dependencies=[Depends(auth.require_auth)])
 
 
 @protected.get("/config")
-def get_config() -> AgentConfig:
-    """Return the current agent config."""
-    return config_store.get()
+def get_config(user: str = Depends(auth.require_auth)) -> AgentConfig:
+    """Return the current user's agent config."""
+    return config_store.get(user)
 
 
 @protected.post("/config")
-def update_config(config: AgentConfig) -> AgentConfig:
-    """Update the agent config (hot-reload, no restart)."""
-    return config_store.update(config)
+def update_config(
+    config: AgentConfig, user: str = Depends(auth.require_auth)
+) -> AgentConfig:
+    """Update the user's agent config (hot-reload, no restart)."""
+    return config_store.update(user, config)
 
 
 @protected.get("/tools")
-def get_tools() -> list[dict]:
-    """List built-in tools, flagging which are enabled in the current config."""
-    return list_tools(config_store.get().tools_enabled)
+def get_tools(user: str = Depends(auth.require_auth)) -> list[dict]:
+    """List built-in tools, flagging which are enabled in the user's config."""
+    return list_tools(config_store.get(user).tools_enabled)
 
 
 @protected.get("/models")
@@ -164,87 +166,88 @@ async def get_models() -> list[dict]:
 
 
 @protected.get("/settings")
-def get_settings() -> dict:
-    """Return non-secret settings (API-key presence, custom prompts, MCP servers)."""
-    return _public_settings()
+def get_settings(user: str = Depends(auth.require_auth)) -> dict:
+    """Return the user's non-secret settings (key presence, prompts, MCP servers)."""
+    return _public_settings(user)
 
 
 @protected.put("/settings/api-key")
-def set_api_key(body: ApiKeyBody) -> dict:
-    """Set (or clear, if empty) the OpenRouter API key used by the agent."""
-    settings_store.set_api_key(body.api_key)
-    if body.api_key.strip():
-        os.environ["OPENROUTER_API_KEY"] = body.api_key.strip()
-    return _public_settings()
+def set_api_key(body: ApiKeyBody, user: str = Depends(auth.require_auth)) -> dict:
+    """Set (or clear, if empty) this user's OpenRouter API key."""
+    settings_store.set_api_key(user, body.api_key)
+    return _public_settings(user)
 
 
 @protected.delete("/settings/api-key")
-def clear_api_key() -> dict:
-    """Clear the UI-provided key (falls back to the .env key, if any)."""
-    settings_store.set_api_key(None)
-    return _public_settings()
+def clear_api_key(user: str = Depends(auth.require_auth)) -> dict:
+    """Clear the user's key (falls back to the .env key, if any)."""
+    settings_store.set_api_key(user, None)
+    return _public_settings(user)
 
 
 @protected.post("/prompts")
-def add_prompt(prompt: CustomPrompt) -> dict:
-    """Create or update a custom prompt (invoked from the chat with /<name>)."""
-    settings_store.upsert_prompt(prompt)
-    return _public_settings()
+def add_prompt(prompt: CustomPrompt, user: str = Depends(auth.require_auth)) -> dict:
+    """Create or update one of the user's custom prompts (invoked with /<name>)."""
+    settings_store.upsert_prompt(user, prompt)
+    return _public_settings(user)
 
 
 @protected.delete("/prompts/{name}")
-def delete_prompt(name: str) -> dict:
-    """Delete a custom prompt by name."""
-    settings_store.delete_prompt(name)
-    return _public_settings()
+def delete_prompt(name: str, user: str = Depends(auth.require_auth)) -> dict:
+    """Delete one of the user's custom prompts by name."""
+    settings_store.delete_prompt(user, name)
+    return _public_settings(user)
 
 
 # ----- MCP servers -----
 
 
 @protected.get("/mcp/servers")
-def list_mcp_servers() -> dict:
-    return _public_settings()
+def list_mcp_servers(user: str = Depends(auth.require_auth)) -> dict:
+    return _public_settings(user)
 
 
 @protected.post("/mcp/servers")
-def upsert_mcp_server(server: MCPServer) -> dict:
-    settings_store.upsert_mcp_server(server)
-    return _public_settings()
+def upsert_mcp_server(server: MCPServer, user: str = Depends(auth.require_auth)) -> dict:
+    settings_store.upsert_mcp_server(user, server)
+    return _public_settings(user)
 
 
 @protected.delete("/mcp/servers/{name}")
-def delete_mcp_server(name: str) -> dict:
-    settings_store.delete_mcp_server(name)
-    return _public_settings()
+def delete_mcp_server(name: str, user: str = Depends(auth.require_auth)) -> dict:
+    settings_store.delete_mcp_server(user, name)
+    return _public_settings(user)
 
 
 @protected.post("/mcp/servers/{name}/toggle")
-def toggle_mcp_server(name: str) -> dict:
-    settings_store.toggle_mcp_server(name)
-    return _public_settings()
+def toggle_mcp_server(name: str, user: str = Depends(auth.require_auth)) -> dict:
+    settings_store.toggle_mcp_server(user, name)
+    return _public_settings(user)
 
 
 @protected.get("/mcp/tools")
-async def mcp_tools() -> list[dict]:
-    """Connect to each enabled MCP server and report its tools (or error)."""
-    return await discover(settings_store.get().mcp_servers)
+async def mcp_tools(user: str = Depends(auth.require_auth)) -> list[dict]:
+    """Connect to each of the user's enabled MCP servers and report its tools."""
+    return await discover(settings_store.get(user).mcp_servers)
 
 
 # ----- Chat -----
 
 
 @protected.post("/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, user: str = Depends(auth.require_auth)):
     """Stream the agent's response to a message as Server-Sent Events."""
-    config = config_store.get()
-    return EventSourceResponse(stream_chat(config, req.message, req.session_id))
+    config = config_store.get(user)
+    settings = settings_store.get(user)
+    return EventSourceResponse(
+        stream_chat(config, settings, req.message, req.session_id, user)
+    )
 
 
 @protected.delete("/sessions/{session_id}")
-def clear_session(session_id: str) -> dict:
-    """Clear a session's conversation history."""
-    session_store.clear(session_id)
+def clear_session(session_id: str, user: str = Depends(auth.require_auth)) -> dict:
+    """Clear one of the user's session conversation histories."""
+    session_store.clear(user, session_id)
     return {"status": "cleared", "session_id": session_id}
 
 

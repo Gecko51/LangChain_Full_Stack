@@ -28,7 +28,7 @@ from langchain_core.tools import BaseTool
 from config import AgentConfig
 from mcp_manager import get_mcp_tools
 from sessions import session_store
-from settings import settings_store
+from settings import Settings
 from tools import get_enabled_tools
 
 # The API key from the environment (.env), captured once at import. The UI can
@@ -36,25 +36,25 @@ from tools import get_enabled_tools
 _ENV_OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 
-def _resolve_api_key() -> str | None:
-    """The UI-provided key wins; otherwise fall back to the .env key."""
-    return settings_store.get().openrouter_api_key or _ENV_OPENROUTER_KEY
+def _resolve_api_key(user_key: str | None) -> str | None:
+    """The user's saved key wins; otherwise fall back to the .env key."""
+    return user_key or _ENV_OPENROUTER_KEY
 
 
-async def gather_tools(config: AgentConfig) -> list[BaseTool]:
-    """Enabled built-in tools + tools from enabled MCP servers."""
+async def gather_tools(config: AgentConfig, mcp_servers: list) -> list[BaseTool]:
+    """Enabled built-in tools + tools from the user's enabled MCP servers."""
     builtin = get_enabled_tools(config.tools_enabled)
-    mcp = await get_mcp_tools(settings_store.get().mcp_servers)
+    mcp = await get_mcp_tools(mcp_servers)
     return [*builtin, *mcp]
 
 
-def build_agent(config: AgentConfig, tools: list[BaseTool]):
+def build_agent(config: AgentConfig, tools: list[BaseTool], api_key: str | None):
     """Create a fresh agent from the given config and pre-gathered tools.
 
     The OpenRouter provider reads ``OPENROUTER_API_KEY`` from the environment, so we
-    set it from the resolved key just before building.
+    set it from the resolved key (the user's, else .env) just before building.
     """
-    key = _resolve_api_key()
+    key = _resolve_api_key(api_key)
     if key:
         os.environ["OPENROUTER_API_KEY"] = key
 
@@ -72,19 +72,23 @@ def _event(event: str, data: dict) -> dict:
 
 
 async def stream_chat(
-    config: AgentConfig, message: str, session_id: str
+    config: AgentConfig,
+    settings: Settings,
+    message: str,
+    session_id: str,
+    username: str,
 ) -> AsyncIterator[dict]:
     """Yield SSE events for one chat turn: token / tool_start / tool_end / done / error."""
     try:
-        tools = await gather_tools(config)
-        agent = build_agent(config, tools)
+        tools = await gather_tools(config, settings.mcp_servers)
+        agent = build_agent(config, tools, settings.openrouter_api_key)
     except Exception as exc:  # noqa: BLE001
         yield _event("error", {"error": "build_error", "detail": str(exc)})
         return
 
     # Input = prior history (trimmed to the window when memory is on) + the new message.
     history: list[BaseMessage] = (
-        session_store.history(session_id, config.memory_window)
+        session_store.history(username, session_id, config.memory_window)
         if config.memory_enabled
         else []
     )
@@ -143,7 +147,7 @@ async def stream_chat(
 
         content = "".join(final_parts)
         # Persist the turn so memory works across requests.
-        session_store.append(session_id, user_msg, AIMessage(content=content))
+        session_store.append(username, session_id, user_msg, AIMessage(content=content))
         yield _event("done", {"finish_reason": "stop", "content": content})
 
     except Exception as exc:  # noqa: BLE001
