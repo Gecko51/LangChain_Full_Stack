@@ -144,3 +144,9 @@
     opacity: 1;
   }
 }
+
+/* Plain class (not a Tailwind utility) so the keyframe above is referenced in the
+   same stylesheet and never tree-shaken away. */
+.thinking-dot {
+  animation: thinking-dot 0.9s ease-in-out infinite;
+}

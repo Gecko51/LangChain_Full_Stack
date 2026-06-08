@@ -16,7 +16,7 @@ export function TypingDots() {
         <span
           key={i}
           className={cn(
-            "size-2 animate-[thinking-dot_0.9s_ease-in-out_infinite] rounded-full bg-gradient-to-br",
+            "thinking-dot size-2 rounded-full bg-gradient-to-br",
             d.grad,
           )}
           style={{ animationDelay: `${i * 0.16}s`, boxShadow: `0 0 10px ${d.glow}` }}
