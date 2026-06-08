@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { ExpandableTextarea } from "@/components/ExpandableTextarea";
 import { useSettings } from "@/hooks/useSettings";
 
 export function SettingsDialog() {
@@ -175,12 +175,14 @@ export function SettingsDialog() {
                 onChange={(e) => setPromptName(e.target.value)}
                 className="font-mono text-xs"
               />
-              <Textarea
+              <ExpandableTextarea
+                title="Prompt content"
+                description="Write a longer prompt here. It runs when you type /name in the chat."
                 placeholder="Prompt content…"
                 value={promptContent}
-                onChange={(e) => setPromptContent(e.target.value)}
+                onChange={setPromptContent}
                 rows={3}
-                className="resize-none text-xs"
+                className="text-xs"
               />
               <Button
                 onClick={onAddPrompt}
