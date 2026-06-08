@@ -1,7 +1,7 @@
 "use client";
 
 import { LogOut } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AgentConfig } from "@/components/AgentConfig";
 import { AuthScreen } from "@/components/AuthScreen";
@@ -18,6 +18,46 @@ export default function Home() {
   const { token, ready, username, logout } = useAuth();
   // On small screens we show one panel at a time; lg shows both side by side.
   const [tab, setTab] = useState<"config" | "chat">("chat");
+
+  // ----- Resizable split between the config and chat panels (lg only) -----
+  const [configPct, setConfigPct] = useState(33); // config panel width, in %
+  const [dragging, setDragging] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Restore the saved split on mount.
+  useEffect(() => {
+    const saved = Number(localStorage.getItem("agentpg_config_pct"));
+    if (saved >= 20 && saved <= 60) setConfigPct(saved);
+  }, []);
+
+  // Persist the split whenever it changes.
+  useEffect(() => {
+    localStorage.setItem("agentpg_config_pct", String(Math.round(configPct)));
+  }, [configPct]);
+
+  // While dragging, update the split from the pointer's X position.
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: PointerEvent) => {
+      const el = mainRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setConfigPct(Math.min(60, Math.max(20, pct))); // clamp 20%–60%
+    };
+    const onUp = () => setDragging(false);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    // Keep the resize cursor and suppress text selection during the drag.
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [dragging]);
 
   // Avoid a flash of the login screen before the token is hydrated.
   if (!ready) {
@@ -88,19 +128,52 @@ export default function Home() {
             ))}
           </div>
 
-          {/* ---- Panels: config 1/3 · chat 2/3 on lg; one at a time on mobile ---- */}
-          <main className="grid min-h-0 flex-1 grid-rows-1 grid-cols-1 lg:grid-cols-3">
+          {/* ---- Panels: resizable config | chat on lg; one at a time on mobile ---- */}
+          <main ref={mainRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
             <aside
+              style={{ "--config-w": `${configPct}%` } as React.CSSProperties}
               className={cn(
-                "min-h-0 overflow-hidden lg:col-span-1 lg:block lg:border-r",
+                "min-h-0 w-full shrink-0 overflow-hidden lg:block lg:w-[var(--config-w)]",
                 tab === "config" ? "block" : "hidden",
               )}
             >
               <AgentConfig />
             </aside>
+
+            {/* Drag-to-resize divider — handle appears on hover (lg only). */}
+            <div
+              onPointerDown={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDoubleClick={() => setConfigPct(33)}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize panels (double-click to reset)"
+              title="Drag to resize · double-click to reset"
+              className="group relative z-10 hidden w-2 shrink-0 touch-none cursor-col-resize lg:-mx-1 lg:flex lg:items-center lg:justify-center"
+            >
+              {/* Separator line — violet on hover/drag. */}
+              <div
+                className={cn(
+                  "h-full w-px transition-colors",
+                  dragging ? "bg-primary" : "bg-border group-hover:bg-primary/70",
+                )}
+              />
+              {/* Grip pill — fades in on hover, solid while dragging. */}
+              <div
+                className={cn(
+                  "absolute h-10 w-1 rounded-full transition-opacity",
+                  dragging
+                    ? "bg-primary opacity-100"
+                    : "bg-primary opacity-0 group-hover:opacity-100",
+                )}
+              />
+            </div>
+
             <section
               className={cn(
-                "min-h-0 overflow-hidden lg:col-span-2 lg:block",
+                "min-h-0 w-full overflow-hidden lg:block lg:min-w-0 lg:flex-1",
                 tab === "chat" ? "block" : "hidden",
               )}
             >
