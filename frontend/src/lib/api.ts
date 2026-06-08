@@ -2,12 +2,15 @@
 import type {
   AgentConfig,
   AppSettings,
+  ChatArchive,
   CustomPrompt,
   MCPServer,
   McpServerStatus,
   ModelInfo,
   ToolInfo,
 } from "@/types/agent";
+
+type ArchiveMessage = { role: string; content: string };
 
 // Public backend URL (set at build/deploy time). Defaults to local dev.
 // Override at build time with NEXT_PUBLIC_BACKEND_URL. The fallback is the deployed
@@ -91,6 +94,44 @@ export async function fetchGenerationCost(
   if (!res.ok) return null;
   const data = await res.json();
   return (data.cost ?? null) as number | null;
+}
+
+// ----- Chat archives (saved past conversations) -----
+
+export async function fetchArchives(): Promise<ChatArchive[]> {
+  const res = await fetch(`${BACKEND_URL}/archives`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error(`GET /archives failed: ${res.status}`);
+  return (await res.json()).archives as ChatArchive[];
+}
+
+export async function createArchive(
+  messages: ArchiveMessage[],
+): Promise<ChatArchive[]> {
+  const res = await fetch(`${BACKEND_URL}/archives`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ messages }),
+  });
+  if (!res.ok) throw new Error(`POST /archives failed: ${res.status}`);
+  return (await res.json()).archives as ChatArchive[];
+}
+
+export async function restoreArchive(id: string): Promise<ArchiveMessage[]> {
+  const res = await fetch(`${BACKEND_URL}/archives/${encodeURIComponent(id)}/restore`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(`restore /archives failed: ${res.status}`);
+  return (await res.json()).messages as ArchiveMessage[];
+}
+
+export async function deleteArchive(id: string): Promise<ChatArchive[]> {
+  const res = await fetch(`${BACKEND_URL}/archives/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(`DELETE /archives failed: ${res.status}`);
+  return (await res.json()).archives as ChatArchive[];
 }
 
 // ----- Settings -----

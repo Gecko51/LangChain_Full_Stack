@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, RotateCcw, Save } from "lucide-react";
+import { Loader2, RotateCcw, Save, Trash2 } from "lucide-react";
 
 import { ModelSelector } from "@/components/ModelSelector";
 import { ToolsPanel } from "@/components/ToolsPanel";
@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { SystemPromptField } from "@/components/SystemPromptField";
 import { useAgentConfig } from "@/hooks/useAgentConfig";
+import { useChatArchives } from "@/hooks/useChatArchives";
 import type { OutputParser } from "@/types/agent";
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -29,6 +30,7 @@ const PARSERS: { value: OutputParser; label: string }[] = [
 
 export function AgentConfig() {
   const { config, setConfig, save, saving, dirty, error } = useAgentConfig();
+  const { archives, requestRestore, removeArchive } = useChatArchives();
 
   const toggleTool = (name: string, on: boolean) => {
     const set = new Set(config.tools_enabled);
@@ -171,6 +173,55 @@ export function AgentConfig() {
                 />
               </div>
             ) : null}
+
+            {/* ---- Saved conversations (archives) — capped to the window ---- */}
+            <div className="space-y-2 border-t pt-3">
+              <div className="flex items-center justify-between">
+                <Label>Saved conversations</Label>
+                <span className="text-muted-foreground font-mono text-xs">
+                  {archives.length} / {config.memory_window}
+                </span>
+              </div>
+              {archives.length === 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  None yet — “New chat” archives the current conversation.
+                </p>
+              ) : (
+                <div className="max-h-48 space-y-1 overflow-y-auto">
+                  {archives.map((a) => (
+                    <div
+                      key={a.id}
+                      className="hover:border-primary/50 flex items-center gap-1 rounded-md border px-2 py-1.5 transition-colors"
+                    >
+                      <button
+                        onClick={() => requestRestore(a.id)}
+                        title="Restore this conversation"
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="truncate text-xs">{a.title}</p>
+                        <p className="text-muted-foreground text-[10px]">
+                          {new Date(a.created_at).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-6 shrink-0"
+                        onClick={() => removeArchive(a.id)}
+                        aria-label={`Delete ${a.title}`}
+                      >
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </AccordionContent>
         </AccordionItem>
 

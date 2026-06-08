@@ -56,6 +56,13 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+// A saved past conversation (auto-named, capped to the memory window).
+export interface ChatArchive {
+  id: string;
+  title: string;
+  created_at: string;
+}
+
 // Agent lifecycle status shown in the chat header.
 export type AgentStatus = "idle" | "thinking" | "streaming" | "error";
 

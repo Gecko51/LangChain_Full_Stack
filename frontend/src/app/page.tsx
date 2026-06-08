@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { AgentConfigProvider } from "@/hooks/useAgentConfig";
 import { useAuth } from "@/hooks/useAuth";
+import { ChatArchivesProvider } from "@/hooks/useChatArchives";
 import { SettingsProvider } from "@/hooks/useSettings";
 import { cn } from "@/lib/utils";
 
@@ -77,7 +78,8 @@ export default function Home() {
   return (
     <SettingsProvider>
       <AgentConfigProvider>
-        <div className="relative flex h-dvh flex-col overflow-hidden">
+        <ChatArchivesProvider>
+          <div className="relative flex h-dvh flex-col overflow-hidden">
           {/* Subtle apple-green glow behind everything. */}
           <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(60%_45%_at_50%_0%,oklch(0.84_0.16_124/0.12),transparent)]" />
 
@@ -180,7 +182,8 @@ export default function Home() {
               <ChatInterface />
             </section>
           </main>
-        </div>
+          </div>
+        </ChatArchivesProvider>
       </AgentConfigProvider>
     </SettingsProvider>
   );

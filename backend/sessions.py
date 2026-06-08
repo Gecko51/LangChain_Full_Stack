@@ -66,6 +66,24 @@ class SessionStore:
         self._hydrated.discard(key)
         db.delete_session(username, session_id)
 
+    def replace_from_dicts(
+        self, username: str, session_id: str, dict_messages: list[dict]
+    ) -> None:
+        """Replace a session's messages from [{role, content}] dicts (archive restore)."""
+        msgs = [
+            _deserialize(
+                {
+                    "role": "ai" if d.get("role") == "assistant" else "human",
+                    "content": d.get("content", ""),
+                }
+            )
+            for d in dict_messages
+        ]
+        key = (username, session_id)
+        self._sessions[key] = msgs
+        self._hydrated.add(key)
+        db.save_session(username, session_id, [_serialize(m) for m in msgs])
+
 
 # Module-level singleton imported across the app.
 session_store = SessionStore()

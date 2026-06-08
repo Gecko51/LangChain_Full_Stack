@@ -20,6 +20,7 @@ from pydantic import BaseModel  # noqa: E402
 from sse_starlette.sse import EventSourceResponse  # noqa: E402
 
 import auth  # noqa: E402
+import db  # noqa: E402
 from agent import fetch_generation_cost, stream_chat  # noqa: E402
 from config import AgentConfig, config_store  # noqa: E402
 from mcp_manager import discover  # noqa: E402
@@ -69,6 +70,20 @@ class ApiKeyBody(BaseModel):
 class AuthBody(BaseModel):
     username: str
     password: str
+
+
+class ArchiveBody(BaseModel):
+    messages: list[dict] = []
+
+
+def _archive_title(messages: list[dict]) -> str:
+    """Auto-name an archive from its first user message (the conversation's topic)."""
+    for m in messages:
+        if m.get("role") == "user":
+            text = " ".join((m.get("content") or "").split())
+            if text:
+                return text[:48] + ("…" if len(text) > 48 else "")
+    return "Conversation"
 
 
 def _public_settings(user: str) -> dict:
@@ -265,6 +280,42 @@ def clear_session(session_id: str, user: str = Depends(auth.require_auth)) -> di
     """Clear one of the user's session conversation histories."""
     session_store.clear(user, session_id)
     return {"status": "cleared", "session_id": session_id}
+
+
+# ----- Chat archives (saved past conversations, capped to the memory window) -----
+
+
+@protected.get("/archives")
+def list_archives(user: str = Depends(auth.require_auth)) -> dict:
+    """List the user's archived conversations (newest first)."""
+    return {"archives": db.list_archives(user)}
+
+
+@protected.post("/archives")
+def create_archive(body: ArchiveBody, user: str = Depends(auth.require_auth)) -> dict:
+    """Archive a conversation (auto-named), then keep only the newest memory_window ones."""
+    if body.messages:
+        db.insert_archive(user, _archive_title(body.messages), body.messages)
+        db.prune_archives(user, config_store.get(user).memory_window)
+    return {"archives": db.list_archives(user)}
+
+
+@protected.post("/archives/{archive_id}/restore")
+def restore_archive(archive_id: str, user: str = Depends(auth.require_auth)) -> dict:
+    """Load an archive back into the live session and return its messages."""
+    arc = db.get_archive(user, archive_id)
+    if not arc:
+        raise HTTPException(status_code=404, detail="archive not found")
+    messages = arc.get("messages") or []
+    session_store.replace_from_dicts(user, "default", messages)
+    return {"messages": messages}
+
+
+@protected.delete("/archives/{archive_id}")
+def delete_archive(archive_id: str, user: str = Depends(auth.require_auth)) -> dict:
+    """Delete one of the user's archives."""
+    db.delete_archive(user, archive_id)
+    return {"archives": db.list_archives(user)}
 
 
 app.include_router(protected)

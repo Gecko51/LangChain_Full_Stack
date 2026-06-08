@@ -1,6 +1,6 @@
 "use client";
 
-import { Eraser, Send, Square, X } from "lucide-react";
+import { Eraser, MessageSquarePlus, Send, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MessageBubble } from "@/components/MessageBubble";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAgentStream } from "@/hooks/useAgentStream";
+import { useChatArchives } from "@/hooks/useChatArchives";
 import { useSettings } from "@/hooks/useSettings";
 import { clearSession } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ const STATUS_META: Record<AgentStatus, { label: string; className: string }> = {
 export function ChatInterface() {
   const { settings } = useSettings();
   const prompts = settings.custom_prompts;
+  const { archiveConversation, restoreTarget, consumeRestore } = useChatArchives();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -149,6 +151,35 @@ export function ChatInterface() {
     }
   }, [cancel]);
 
+  // Archive the current conversation (auto-named) and start a fresh one.
+  const handleNewChat = useCallback(async () => {
+    if (messages.length > 0) {
+      await archiveConversation(
+        messages
+          .filter((m) => m.content.trim())
+          .map((m) => ({ role: m.role, content: m.content })),
+      );
+    }
+    await handleClear();
+  }, [messages, archiveConversation, handleClear]);
+
+  // Load a restored archive into the chat view (the backend reseeded the live session).
+  useEffect(() => {
+    if (!restoreTarget) return;
+    cancel();
+    setMessages(
+      restoreTarget.map((m) => ({
+        id: uid(),
+        role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+        content: m.content,
+        timestamp: Date.now(),
+      })),
+    );
+    setStatus("idle");
+    assistantIdRef.current = null;
+    consumeRestore();
+  }, [restoreTarget, consumeRestore, cancel]);
+
   const statusMeta = STATUS_META[status];
 
   return (
@@ -163,15 +194,27 @@ export function ChatInterface() {
             {statusMeta.label}
           </Badge>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleClear}
-          disabled={messages.length === 0}
-        >
-          <Eraser className="size-3" />
-          Clear history
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleNewChat}
+            disabled={messages.length === 0}
+            title="Archive this conversation and start a new one"
+          >
+            <MessageSquarePlus className="size-3" />
+            New chat
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClear}
+            disabled={messages.length === 0}
+          >
+            <Eraser className="size-3" />
+            Clear history
+          </Button>
+        </div>
       </div>
 
       {/* ---- Messages (scrollable) ----

@@ -182,3 +182,89 @@ def insert_user(username: str, password_hash: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# ----- chat archives (saved past conversations) -----
+
+
+def list_archives(username: str) -> list[dict]:
+    """Archive summaries (id, title, created_at) for a user, newest first."""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        resp = (
+            client.table("chat_archives")
+            .select("id,title,created_at")
+            .eq("username", username)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return resp.data or []
+    except Exception:
+        return []
+
+
+def get_archive(username: str, archive_id: str) -> dict | None:
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        resp = (
+            client.table("chat_archives")
+            .select("id,title,messages")
+            .eq("username", username)
+            .eq("id", archive_id)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def insert_archive(username: str, title: str, messages: list) -> bool:
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("chat_archives").insert(
+            {"username": username, "title": title, "messages": messages}
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
+def delete_archive(username: str, archive_id: str) -> bool:
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("chat_archives").delete().eq("username", username).eq(
+            "id", archive_id
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
+def prune_archives(username: str, keep: int) -> None:
+    """Keep only the newest ``keep`` archives for a user; delete the older ones."""
+    client = _get_client()
+    if not client or keep < 0:
+        return
+    try:
+        resp = (
+            client.table("chat_archives")
+            .select("id")
+            .eq("username", username)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        ids = [r["id"] for r in (resp.data or [])][keep:]
+        if ids:
+            client.table("chat_archives").delete().in_("id", ids).execute()
+    except Exception:
+        pass
