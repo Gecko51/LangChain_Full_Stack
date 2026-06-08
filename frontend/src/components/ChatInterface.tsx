@@ -192,7 +192,7 @@ export function ChatInterface() {
                   className="hover:bg-accent flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
                 >
                   <span className="text-primary shrink-0 font-mono text-sm">/{p.name}</span>
-                  <span className="text-muted-foreground truncate text-xs">{p.content}</span>
+                  <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{p.content}</span>
                 </button>
               ))}
             </div>

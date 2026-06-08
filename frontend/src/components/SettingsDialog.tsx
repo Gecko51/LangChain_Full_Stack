@@ -83,7 +83,9 @@ export function SettingsDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="api-key">
+        {/* min-w-0: this is a grid child of DialogContent; without it a long, non-wrapping
+            prompt line forces the dialog wider than its max-width. */}
+        <Tabs defaultValue="api-key" className="min-w-0">
           <TabsList className="w-full">
             <TabsTrigger value="api-key" className="flex-1">
               API Key
