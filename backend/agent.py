@@ -10,10 +10,12 @@ Tools = enabled built-in tools + tools from enabled MCP servers.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import AsyncIterator
 
+import httpx
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import (
@@ -39,6 +41,31 @@ _ENV_OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY")
 def _resolve_api_key(user_key: str | None) -> str | None:
     """The user's saved key wins; otherwise fall back to the .env key."""
     return user_key or _ENV_OPENROUTER_KEY
+
+
+async def fetch_generation_cost(generation_id: str, user_key: str | None) -> float | None:
+    """OpenRouter cost (USD) for a generation, by id.
+
+    The generation record only appears a few seconds after the request finishes,
+    so we retry. Returns None if it can't be fetched.
+    """
+    key = _resolve_api_key(user_key)
+    if not generation_id or not key:
+        return None
+    async with httpx.AsyncClient(timeout=10) as client:
+        for _ in range(6):
+            try:
+                resp = await client.get(
+                    "https://openrouter.ai/api/v1/generation",
+                    params={"id": generation_id},
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                if resp.status_code == 200:
+                    return resp.json().get("data", {}).get("total_cost")
+            except Exception:
+                pass
+            await asyncio.sleep(1.0)
+    return None
 
 
 async def gather_tools(config: AgentConfig, mcp_servers: list) -> list[BaseTool]:
@@ -97,6 +124,8 @@ async def stream_chat(
 
     final_parts: list[str] = []
     seen_tool_calls: set[str] = set()
+    usage_md: dict | None = None  # OpenRouter token usage (last LLM call)
+    gen_id: str | None = None  # OpenRouter generation id (for the cost lookup)
 
     try:
         async for chunk in agent.astream(
@@ -106,13 +135,19 @@ async def stream_chat(
         ):
             ctype = chunk.get("type") if isinstance(chunk, dict) else None
 
-            # --- incremental assistant tokens ---
+            # --- incremental assistant tokens (+ usage metadata) ---
             if ctype == "messages":
                 token, _meta = chunk["data"]
-                text = getattr(token, "text", None)
-                if isinstance(token, AIMessageChunk) and text:
-                    final_parts.append(text)
-                    yield _event("token", {"text": text})
+                if isinstance(token, AIMessageChunk):
+                    if token.usage_metadata:
+                        usage_md = dict(token.usage_metadata)
+                    rid = token.response_metadata.get("id")
+                    if rid:
+                        gen_id = rid
+                    text = getattr(token, "text", None)
+                    if text:
+                        final_parts.append(text)
+                        yield _event("token", {"text": text})
 
             # --- completed steps: tool calls (from the model) and tool results ---
             elif ctype == "updates":
@@ -121,6 +156,12 @@ async def stream_chat(
                         continue
                     messages = update.get("messages") or []
                     msg = messages[-1] if messages else None
+                    if isinstance(msg, AIMessage):
+                        if msg.usage_metadata:
+                            usage_md = dict(msg.usage_metadata)
+                        rid = msg.response_metadata.get("id")
+                        if rid:
+                            gen_id = rid
                     if isinstance(msg, AIMessage) and msg.tool_calls:
                         for tc in msg.tool_calls:
                             tc_id = tc.get("id") or tc.get("name") or ""
@@ -148,6 +189,19 @@ async def stream_chat(
         content = "".join(final_parts)
         # Persist the turn so memory works across requests.
         session_store.append(username, session_id, user_msg, AIMessage(content=content))
+        # Token usage (cost is fetched lazily by the client via /chat/cost).
+        if usage_md:
+            details = usage_md.get("output_token_details") or {}
+            yield _event(
+                "usage",
+                {
+                    "prompt_tokens": usage_md.get("input_tokens"),
+                    "completion_tokens": usage_md.get("output_tokens"),
+                    "total_tokens": usage_md.get("total_tokens"),
+                    "reasoning_tokens": details.get("reasoning", 0),
+                    "generation_id": gen_id,
+                },
+            )
         yield _event("done", {"finish_reason": "stop", "content": content})
 
     except Exception as exc:  # noqa: BLE001

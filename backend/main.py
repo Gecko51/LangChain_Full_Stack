@@ -20,7 +20,7 @@ from pydantic import BaseModel  # noqa: E402
 from sse_starlette.sse import EventSourceResponse  # noqa: E402
 
 import auth  # noqa: E402
-from agent import stream_chat  # noqa: E402
+from agent import fetch_generation_cost, stream_chat  # noqa: E402
 from config import AgentConfig, config_store  # noqa: E402
 from mcp_manager import discover  # noqa: E402
 from schemas import ChatRequest  # noqa: E402
@@ -242,6 +242,15 @@ async def chat(req: ChatRequest, user: str = Depends(auth.require_auth)):
     return EventSourceResponse(
         stream_chat(config, settings, req.message, req.session_id, user)
     )
+
+
+@protected.get("/chat/cost/{generation_id}")
+async def chat_cost(generation_id: str, user: str = Depends(auth.require_auth)) -> dict:
+    """OpenRouter cost (USD) for a generation — fetched on demand from the UI."""
+    cost = await fetch_generation_cost(
+        generation_id, settings_store.get(user).openrouter_api_key
+    )
+    return {"cost": cost}
 
 
 @protected.delete("/sessions/{session_id}")

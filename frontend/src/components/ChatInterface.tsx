@@ -81,6 +81,10 @@ export function ChatInterface() {
         ),
       }));
     },
+    // Usage arrives just before "done", while the message id is still tracked.
+    onUsage: (usage) => {
+      patchAssistant((m) => ({ ...m, usage }));
+    },
     onComplete: (content) => {
       patchAssistant((m) => ({ ...m, content: content || m.content, streaming: false }));
       assistantIdRef.current = null;

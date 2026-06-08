@@ -1,17 +1,22 @@
 "use client";
 
-import { Check, Copy } from "lucide-react";
+import { BarChart3, Check, Copy } from "lucide-react";
 import { useState } from "react";
 
 import { Markdown } from "@/components/Markdown";
 import { ToolCallChip } from "@/components/ToolCallChip";
 import { TypingDots } from "@/components/TypingDots";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { fetchGenerationCost } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/types/agent";
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
+  // Cost is fetched lazily when the metrics popover opens (undefined = not yet).
+  const [cost, setCost] = useState<number | null | undefined>(undefined);
+  const [loadingCost, setLoadingCost] = useState(false);
 
   const copy = async () => {
     try {
@@ -22,6 +27,30 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
       // clipboard may be unavailable (e.g. insecure context) — ignore
     }
   };
+
+  const usage = message.usage;
+
+  // Fetch the cost the first time the panel opens (retry while still null).
+  const onMetricsOpen = async (open: boolean) => {
+    const genId = usage?.generation_id;
+    if (open && (cost === undefined || cost === null) && genId && !loadingCost) {
+      setLoadingCost(true);
+      try {
+        setCost(await fetchGenerationCost(genId));
+      } finally {
+        setLoadingCost(false);
+      }
+    }
+  };
+
+  const tokenRows: [string, number | null | undefined][] = usage
+    ? [
+        ["Prompt tokens", usage.prompt_tokens],
+        ["Completion tokens", usage.completion_tokens],
+        ["Total tokens", usage.total_tokens],
+        ["Reasoning tokens", usage.reasoning_tokens],
+      ]
+    : [];
 
   return (
     <div
@@ -49,6 +78,42 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           )
         ) : !isUser && message.streaming ? (
           <TypingDots />
+        ) : null}
+
+        {/* Usage metrics — small icon that opens a metrics panel (assistant only). */}
+        {!isUser && usage && !message.streaming ? (
+          <Popover onOpenChange={onMetricsOpen}>
+            <PopoverTrigger asChild>
+              <button
+                aria-label="Usage metrics"
+                title="Usage metrics"
+                className="text-muted-foreground hover:text-foreground mt-1.5 inline-flex items-center gap-1 text-[11px] transition-colors"
+              >
+                <BarChart3 className="size-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-60">
+              <p className="mb-2 text-xs font-semibold">OpenRouter usage</p>
+              <div className="space-y-1">
+                {tokenRows.map(([label, val]) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between gap-4 text-xs"
+                  >
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="font-mono">{val ?? "—"}</span>
+                  </div>
+                ))}
+                <div className="border-border my-1.5 border-t" />
+                <div className="flex items-center justify-between gap-4 text-xs">
+                  <span className="text-muted-foreground">Cost</span>
+                  <span className="font-mono">
+                    {loadingCost ? "…" : cost == null ? "—" : `$${cost.toFixed(6)}`}
+                  </span>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         ) : null}
 
         {/* Copy button — appears on hover over a finished assistant message. */}

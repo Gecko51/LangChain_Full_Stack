@@ -6,12 +6,14 @@
 import { useCallback, useRef, useState } from "react";
 
 import { BACKEND_URL, getAuthHeaders } from "@/lib/api";
+import type { MessageUsage } from "@/types/agent";
 
 interface UseAgentStreamOptions {
   onToken?: (text: string) => void;
   onToolStart?: (tool: { id: string; name: string; input?: unknown }) => void;
   onToolEnd?: (tool: { id: string; name: string; output: string }) => void;
   onComplete?: (content: string) => void;
+  onUsage?: (usage: MessageUsage) => void;
   onError?: (err: { error: string; detail: string }) => void;
 }
 
@@ -116,6 +118,15 @@ function handleFrame(frame: string, options: UseAgentStreamOptions) {
         id: String(payload.id ?? ""),
         name: String(payload.name ?? ""),
         output: String(payload.output ?? ""),
+      });
+      break;
+    case "usage":
+      options.onUsage?.({
+        prompt_tokens: (payload.prompt_tokens as number | null) ?? null,
+        completion_tokens: (payload.completion_tokens as number | null) ?? null,
+        total_tokens: (payload.total_tokens as number | null) ?? null,
+        reasoning_tokens: (payload.reasoning_tokens as number | null) ?? null,
+        generation_id: (payload.generation_id as string | null) ?? null,
       });
       break;
     case "done":

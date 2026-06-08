@@ -75,6 +75,20 @@ export async function clearSession(sessionId: string): Promise<void> {
   });
 }
 
+// OpenRouter cost (USD) of a generation — fetched lazily when the user opens the
+// metrics panel (the cost record appears a few seconds after the request).
+export async function fetchGenerationCost(
+  generationId: string,
+): Promise<number | null> {
+  const res = await fetch(
+    `${BACKEND_URL}/chat/cost/${encodeURIComponent(generationId)}`,
+    { headers: getAuthHeaders() },
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  return (data.cost ?? null) as number | null;
+}
+
 // ----- Settings -----
 
 export async function fetchSettings(): Promise<AppSettings> {

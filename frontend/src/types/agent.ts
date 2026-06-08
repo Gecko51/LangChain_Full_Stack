@@ -35,11 +35,22 @@ export interface ToolCall {
 
 export type ChatRole = "user" | "assistant";
 
+// OpenRouter usage metrics for an assistant message.
+export interface MessageUsage {
+  prompt_tokens?: number | null; // tokens sent to the model
+  completion_tokens?: number | null; // tokens generated
+  total_tokens?: number | null;
+  reasoning_tokens?: number | null; // when the model exposes reasoning
+  generation_id?: string | null; // OpenRouter generation id (for the cost lookup)
+  cost?: number | null; // USD — fetched lazily; undefined = not fetched yet
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
   toolCalls?: ToolCall[];
+  usage?: MessageUsage;
   // Set while the assistant message is still streaming in.
   streaming?: boolean;
   timestamp: number;
