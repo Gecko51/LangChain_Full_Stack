@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, KeyRound, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
+import { Check, KeyRound, Loader2, Pencil, Plus, Settings2, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -27,6 +27,8 @@ export function SettingsDialog() {
   const [promptName, setPromptName] = useState("");
   const [promptContent, setPromptContent] = useState("");
   const [savingPrompt, setSavingPrompt] = useState(false);
+  // Name of the prompt being edited (null = creating a new one).
+  const [editingName, setEditingName] = useState<string | null>(null);
 
   const onSaveKey = async () => {
     if (!keyInput.trim()) return;
@@ -51,16 +53,34 @@ export function SettingsDialog() {
     }
   };
 
-  const onAddPrompt = async () => {
+  // Load a saved prompt into the form for editing.
+  const startEdit = (p: { name: string; content: string }) => {
+    setEditingName(p.name);
+    setPromptName(p.name);
+    setPromptContent(p.content);
+  };
+
+  const cancelEdit = () => {
+    setEditingName(null);
+    setPromptName("");
+    setPromptContent("");
+  };
+
+  const onSavePrompt = async () => {
     // Normalise the name into a slash-friendly token (no leading slash, no spaces).
     const name = promptName.trim().replace(/^\/+/, "").replace(/\s+/g, "-");
     if (!name || !promptContent.trim()) return;
     setSavingPrompt(true);
     try {
       await savePrompt({ name, content: promptContent.trim() });
+      // Editing + renamed → remove the old entry so it's a rename, not a copy.
+      if (editingName && editingName !== name) {
+        await removePrompt(editingName);
+      }
       setPromptName("");
       setPromptContent("");
-      toast.success(`Saved /${name}`);
+      setEditingName(null);
+      toast.success(editingName ? `Updated /${name}` : `Saved /${name}`);
     } catch (e) {
       toast.error(`Failed: ${(e as Error).message}`);
     } finally {
@@ -150,11 +170,25 @@ export function SettingsDialog() {
                 </p>
               ) : (
                 settings.custom_prompts.map((p) => (
-                  <div key={p.name} className="flex items-center gap-2 rounded-md border p-2">
+                  <div
+                    key={p.name}
+                    className={`flex items-center gap-2 rounded-md border p-2 ${
+                      editingName === p.name ? "ring-primary ring-1" : ""
+                    }`}
+                  >
                     <div className="min-w-0 flex-1">
                       <p className="text-primary font-mono text-xs">/{p.name}</p>
                       <p className="text-muted-foreground truncate text-xs">{p.content}</p>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 shrink-0"
+                      onClick={() => startEdit(p)}
+                      aria-label={`Edit ${p.name}`}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -169,7 +203,9 @@ export function SettingsDialog() {
               )}
             </div>
             <div className="space-y-2 border-t pt-3">
-              <Label htmlFor="prompt-name">New prompt</Label>
+              <Label htmlFor="prompt-name">
+                {editingName ? `Edit /${editingName}` : "New prompt"}
+              </Label>
               <Input
                 id="prompt-name"
                 placeholder="name (e.g. summarize)"
@@ -186,17 +222,27 @@ export function SettingsDialog() {
                 rows={3}
                 className="text-xs"
               />
-              <Button
-                onClick={onAddPrompt}
-                disabled={savingPrompt || !promptName.trim() || !promptContent.trim()}
-              >
-                {savingPrompt ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Plus className="size-4" />
-                )}
-                Add prompt
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={onSavePrompt}
+                  disabled={savingPrompt || !promptName.trim() || !promptContent.trim()}
+                >
+                  {savingPrompt ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : editingName ? (
+                    <Check className="size-4" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
+                  {editingName ? "Save changes" : "Add prompt"}
+                </Button>
+                {editingName ? (
+                  <Button variant="outline" onClick={cancelEdit} disabled={savingPrompt}>
+                    <X className="size-4" />
+                    Cancel
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </TabsContent>
 
