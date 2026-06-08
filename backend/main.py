@@ -30,11 +30,16 @@ from tools import list_tools  # noqa: E402
 
 app = FastAPI(title="Agent Playground API", version="1.0.0")
 
-# --- CORS: allow the local frontend and the configured FRONTEND_URL ---
-_frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+# --- CORS: allow the local frontend + the configured FRONTEND_URL(s) ---
+# FRONTEND_URL may be a comma-separated list (e.g. prod + preview domains).
+_frontend_urls = [
+    u.strip()
+    for u in os.getenv("FRONTEND_URL", "http://localhost:3000").split(",")
+    if u.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list({"http://localhost:3000", _frontend_url}),
+    allow_origins=list({"http://localhost:3000", *_frontend_urls}),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

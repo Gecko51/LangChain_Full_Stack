@@ -1,0 +1,11 @@
+# Keep the image small and free of local data/secrets.
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+# Local-only persistence (rebuilt from Supabase / per user at runtime).
+config.json
+settings.json
+auth_users.json
+.env

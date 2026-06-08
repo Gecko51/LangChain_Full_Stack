@@ -1,0 +1,24 @@
+# Render Blueprint — deploys the FastAPI backend as a free Docker web service.
+# The Next.js frontend is deployed separately on Vercel (see DEPLOY.md).
+#
+# On render.com:  New → Blueprint → connect this repo → fill the secret env vars.
+services:
+  - type: web
+    name: agent-playground-api
+    runtime: docker
+    plan: free # sleeps after ~15 min idle; ~50s cold start. Upgrade to "starter" ($7/mo) for always-on.
+    region: frankfurt # close to the eu-west Supabase project
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false # paste your key in the dashboard (kept secret)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false # set to your Vercel URL once the frontend is live (comma-separated for several)
+      - key: AUTH_SECRET
+        generateValue: true # Render generates a strong random secret for signing login JWTs
