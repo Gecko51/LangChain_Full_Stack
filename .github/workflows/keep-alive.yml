@@ -1,0 +1,31 @@
+# Keeps the free Render backend awake so users don't hit the ~50s cold start.
+# Pings /health every 10 minutes (under Render's 15-min sleep window). GitHub Actions
+# are free + unlimited on PUBLIC repos, so this costs nothing here.
+#
+# Note: this keeps the Render instance running ~24/7 (~730h/month), which is just under
+# the 750h free-tier limit — fine as long as it stays your only free Render service.
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # every 10 minutes
+  workflow_dispatch: {} # lets you run it on demand from the Actions tab
+
+permissions: {} # no repo access needed — it only calls an external URL
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the backend /health endpoint
+        run: |
+          # --max-time 90 so a cold start (server waking, ~50s) still completes and
+          # actually warms the instance; --retry rides out a brief 5xx while it boots.
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            --max-time 90 --retry 3 --retry-delay 5 --retry-all-errors \
+            https://agent-playground-api.onrender.com/health || echo "000")
+          echo "Health check -> HTTP $code"
+          case "$code" in
+            200|204) echo "✅ Backend is awake." ;;
+            *) echo "⚠️ Backend returned $code (it may be mid-redeploy)." ;;
+          esac
