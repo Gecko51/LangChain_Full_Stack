@@ -8,15 +8,19 @@ import { AuthScreen } from "@/components/AuthScreen";
 import { ChatInterface } from "@/components/ChatInterface";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { WarmupSplash } from "@/components/WarmupSplash";
 import { Button } from "@/components/ui/button";
 import { AgentConfigProvider } from "@/hooks/useAgentConfig";
 import { useAuth } from "@/hooks/useAuth";
+import { useBackendWarmup } from "@/hooks/useBackendWarmup";
 import { ChatArchivesProvider } from "@/hooks/useChatArchives";
 import { SettingsProvider } from "@/hooks/useSettings";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
   const { token, ready, username, logout } = useAuth();
+  // Detects a cold (sleeping) Render backend so we can show a warming splash.
+  const warmup = useBackendWarmup();
   // On small screens we show one panel at a time; lg shows both side by side.
   const [tab, setTab] = useState<"config" | "chat">("chat");
 
@@ -59,6 +63,12 @@ export default function Home() {
       document.body.style.cursor = "";
     };
   }, [dragging]);
+
+  // While the free-tier backend wakes from sleep, show a friendly splash. It only
+  // appears when the server is actually cold; a warm load skips straight past it.
+  if (warmup.status === "warming") {
+    return <WarmupSplash elapsed={warmup.elapsed} />;
+  }
 
   // Avoid a flash of the login screen before the token is hydrated.
   if (!ready) {

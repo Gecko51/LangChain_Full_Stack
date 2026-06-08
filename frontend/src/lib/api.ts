@@ -20,6 +20,24 @@ export const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ??
   "https://agent-playground-api.onrender.com";
 
+// Liveness probe (public, no auth). Used by the warmup splash to detect a cold
+// (sleeping) Render backend and dismiss the splash as soon as it answers.
+export async function checkHealth(timeoutMs = 10000): Promise<boolean> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${BACKEND_URL}/health`, {
+      signal: ctrl.signal,
+      cache: "no-store",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ----- Auth token (set by the AuthProvider; sent on every protected request) -----
 
 let _authToken: string | null = null;
