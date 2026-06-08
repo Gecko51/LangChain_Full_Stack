@@ -1,0 +1,9 @@
+# Only the frontend is deployed to Vercel — skip the rest to keep the upload small.
+backend/
+**/venv/
+**/__pycache__/
+**/node_modules/
+.git/
+.playwright-mcp/
+*.png
+docs/

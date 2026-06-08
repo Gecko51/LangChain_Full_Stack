@@ -40,6 +40,8 @@ _frontend_urls = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list({"http://localhost:3000", *_frontend_urls}),
+    # Allow any Vercel deployment (prod + previews) without re-setting FRONTEND_URL.
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

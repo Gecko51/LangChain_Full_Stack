@@ -10,8 +10,12 @@ import type {
 } from "@/types/agent";
 
 // Public backend URL (set at build/deploy time). Defaults to local dev.
+// Override at build time with NEXT_PUBLIC_BACKEND_URL. The fallback is the deployed
+// Render backend (used by the Vercel production build); local dev points it at
+// http://localhost:8000 via frontend/.env.local.
 export const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_BACKEND_URL ??
+  "https://agent-playground-api.onrender.com";
 
 // ----- Auth token (set by the AuthProvider; sent on every protected request) -----
 
