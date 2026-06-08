@@ -1,6 +1,7 @@
 # Keeps the free Render backend awake so users don't hit the ~50s cold start.
-# Pings /health every 10 minutes (under Render's 15-min sleep window). GitHub Actions
-# are free + unlimited on PUBLIC repos, so this costs nothing here.
+# Pings /health every 5 minutes — GitHub's scheduler is imprecise (runs can be 5-10
+# min late), so a tight interval gives margin to stay under Render's 15-min sleep.
+# GitHub Actions are free + unlimited on PUBLIC repos, so this costs nothing here.
 #
 # Note: this keeps the Render instance running ~24/7 (~730h/month), which is just under
 # the 750h free-tier limit — fine as long as it stays your only free Render service.
@@ -8,7 +9,7 @@ name: keep-alive
 
 on:
   schedule:
-    - cron: "*/10 * * * *" # every 10 minutes
+    - cron: "*/5 * * * *" # every 5 minutes (GitHub may still delay/skip some)
   workflow_dispatch: {} # lets you run it on demand from the Actions tab
 
 permissions: {} # no repo access needed — it only calls an external URL
