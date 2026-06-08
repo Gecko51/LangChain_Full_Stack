@@ -1,7 +1,7 @@
-"""FastAPI entrypoint: routes, CORS, and app wiring.
+"""FastAPI entrypoint: routes, CORS, auth gate, and app wiring.
 
-The agent is rebuilt from ``config_store`` on every /chat request, so config changes
-apply immediately without a restart.
+Public routes: /health and /auth/*. Everything else is behind a JWT login gate
+(see auth.py). The agent is rebuilt from ``config_store`` on every /chat request.
 """
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ import os
 
 from dotenv import load_dotenv
 
-# Load env FIRST, before importing modules (agent.py) that read the API key from the
-# environment at import time. Loads the backend dir and the project-root .env.
+# Load env FIRST, before importing modules (agent.py, auth.py) that read env at import.
 load_dotenv()
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 import httpx  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
+from fastapi import APIRouter, Depends, FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 from sse_starlette.sse import EventSourceResponse  # noqa: E402
 
+import auth  # noqa: E402
 from agent import stream_chat  # noqa: E402
 from config import AgentConfig, config_store  # noqa: E402
 from mcp_manager import discover  # noqa: E402
@@ -59,6 +59,11 @@ class ApiKeyBody(BaseModel):
     api_key: str = ""
 
 
+class AuthBody(BaseModel):
+    username: str
+    password: str
+
+
 def _public_settings() -> dict:
     """Settings safe to expose to the client (never the raw API key)."""
     s = settings_store.get()
@@ -79,31 +84,65 @@ def _public_settings() -> dict:
     }
 
 
+# ======================= Public routes =======================
+
+
 @app.get("/health")
 def health() -> dict:
     """Liveness probe."""
     return {"status": "ok"}
 
 
-@app.get("/config")
+@app.get("/auth/status")
+def auth_status() -> dict:
+    """Whether an account exists yet (drives register vs login on the client)."""
+    return {"registered": auth.has_account()}
+
+
+@app.post("/auth/register")
+def auth_register(body: AuthBody) -> dict:
+    """Create the single account on first connection."""
+    try:
+        token = auth.register(body.username, body.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"token": token, "username": body.username.strip()}
+
+
+@app.post("/auth/login")
+def auth_login(body: AuthBody) -> dict:
+    """Log in with the account credentials."""
+    try:
+        token = auth.login(body.username, body.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+    return {"token": token, "username": body.username.strip()}
+
+
+# ==================== Protected routes (JWT) ====================
+
+protected = APIRouter(dependencies=[Depends(auth.require_auth)])
+
+
+@protected.get("/config")
 def get_config() -> AgentConfig:
     """Return the current agent config."""
     return config_store.get()
 
 
-@app.post("/config")
+@protected.post("/config")
 def update_config(config: AgentConfig) -> AgentConfig:
     """Update the agent config (hot-reload, no restart)."""
     return config_store.update(config)
 
 
-@app.get("/tools")
+@protected.get("/tools")
 def get_tools() -> list[dict]:
     """List built-in tools, flagging which are enabled in the current config."""
     return list_tools(config_store.get().tools_enabled)
 
 
-@app.get("/models")
+@protected.get("/models")
 async def get_models() -> list[dict]:
     """Return available models — live from OpenRouter, with a curated fallback."""
     try:
@@ -118,20 +157,19 @@ async def get_models() -> list[dict]:
             models.append({"value": mid, "label": m.get("name", mid), "provider": provider})
         return models or CURATED_MODELS
     except Exception:
-        # Network/API issue -> fall back to the curated list.
         return CURATED_MODELS
 
 
 # ----- Settings: API key + custom prompts -----
 
 
-@app.get("/settings")
+@protected.get("/settings")
 def get_settings() -> dict:
     """Return non-secret settings (API-key presence, custom prompts, MCP servers)."""
     return _public_settings()
 
 
-@app.put("/settings/api-key")
+@protected.put("/settings/api-key")
 def set_api_key(body: ApiKeyBody) -> dict:
     """Set (or clear, if empty) the OpenRouter API key used by the agent."""
     settings_store.set_api_key(body.api_key)
@@ -140,21 +178,21 @@ def set_api_key(body: ApiKeyBody) -> dict:
     return _public_settings()
 
 
-@app.delete("/settings/api-key")
+@protected.delete("/settings/api-key")
 def clear_api_key() -> dict:
     """Clear the UI-provided key (falls back to the .env key, if any)."""
     settings_store.set_api_key(None)
     return _public_settings()
 
 
-@app.post("/prompts")
+@protected.post("/prompts")
 def add_prompt(prompt: CustomPrompt) -> dict:
     """Create or update a custom prompt (invoked from the chat with /<name>)."""
     settings_store.upsert_prompt(prompt)
     return _public_settings()
 
 
-@app.delete("/prompts/{name}")
+@protected.delete("/prompts/{name}")
 def delete_prompt(name: str) -> dict:
     """Delete a custom prompt by name."""
     settings_store.delete_prompt(name)
@@ -164,48 +202,50 @@ def delete_prompt(name: str) -> dict:
 # ----- MCP servers -----
 
 
-@app.get("/mcp/servers")
+@protected.get("/mcp/servers")
 def list_mcp_servers() -> dict:
-    """Return the configured MCP servers (part of the settings payload)."""
     return _public_settings()
 
 
-@app.post("/mcp/servers")
+@protected.post("/mcp/servers")
 def upsert_mcp_server(server: MCPServer) -> dict:
-    """Add or update an MCP server."""
     settings_store.upsert_mcp_server(server)
     return _public_settings()
 
 
-@app.delete("/mcp/servers/{name}")
+@protected.delete("/mcp/servers/{name}")
 def delete_mcp_server(name: str) -> dict:
-    """Remove an MCP server."""
     settings_store.delete_mcp_server(name)
     return _public_settings()
 
 
-@app.post("/mcp/servers/{name}/toggle")
+@protected.post("/mcp/servers/{name}/toggle")
 def toggle_mcp_server(name: str) -> dict:
-    """Enable/disable an MCP server."""
     settings_store.toggle_mcp_server(name)
     return _public_settings()
 
 
-@app.get("/mcp/tools")
+@protected.get("/mcp/tools")
 async def mcp_tools() -> list[dict]:
     """Connect to each enabled MCP server and report its tools (or error)."""
     return await discover(settings_store.get().mcp_servers)
 
 
-@app.post("/chat")
+# ----- Chat -----
+
+
+@protected.post("/chat")
 async def chat(req: ChatRequest):
     """Stream the agent's response to a message as Server-Sent Events."""
     config = config_store.get()
     return EventSourceResponse(stream_chat(config, req.message, req.session_id))
 
 
-@app.delete("/sessions/{session_id}")
+@protected.delete("/sessions/{session_id}")
 def clear_session(session_id: str) -> dict:
-    """Clear a session's conversation history (the 'Clear history' button)."""
+    """Clear a session's conversation history."""
     session_store.clear(session_id)
     return {"status": "cleared", "session_id": session_id}
+
+
+app.include_router(protected)

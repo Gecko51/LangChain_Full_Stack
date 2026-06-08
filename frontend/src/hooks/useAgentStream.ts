@@ -5,7 +5,7 @@
 // with a JSON body, which EventSource cannot send.
 import { useCallback, useRef, useState } from "react";
 
-import { BACKEND_URL } from "@/lib/api";
+import { BACKEND_URL, getAuthHeaders } from "@/lib/api";
 
 interface UseAgentStreamOptions {
   onToken?: (text: string) => void;
@@ -38,7 +38,7 @@ export function useAgentStream(options: UseAgentStreamOptions) {
       try {
         const res = await fetch(`${BACKEND_URL}/chat`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           body: JSON.stringify({ message, session_id: sessionId }),
           signal: controller.signal,
         });

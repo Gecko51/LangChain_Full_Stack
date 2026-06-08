@@ -6,8 +6,7 @@ import "highlight.js/styles/github-dark.css";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { AgentConfigProvider } from "@/hooks/useAgentConfig";
-import { SettingsProvider } from "@/hooks/useSettings";
+import { AuthProvider } from "@/hooks/useAuth";
 
 // Font CSS variables consumed by globals.css (@theme inline).
 const geistSans = Geist({ variable: "--font-sans", subsets: ["latin"] });
@@ -35,9 +34,9 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          <SettingsProvider>
-            <AgentConfigProvider>{children}</AgentConfigProvider>
-          </SettingsProvider>
+          {/* AuthProvider gates the app; the config/settings providers live inside the
+              authenticated area (see page.tsx) so they only load once logged in. */}
+          <AuthProvider>{children}</AuthProvider>
           <Toaster />
         </ThemeProvider>
       </body>

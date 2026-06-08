@@ -115,3 +115,38 @@ def delete_session(session_id: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# ----- auth users -----
+
+
+def first_user() -> dict | None:
+    """The single admin account (oldest user), or None."""
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        resp = (
+            client.table("app_users")
+            .select("username,password_hash")
+            .order("created_at")
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def insert_user(username: str, password_hash: str) -> bool:
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("app_users").insert(
+            {"username": username, "password_hash": password_hash}
+        ).execute()
+        return True
+    except Exception:
+        return False
