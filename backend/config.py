@@ -1,9 +1,8 @@
-"""Agent configuration model, defaults, and the in-memory config store.
+"""Agent configuration model, defaults, and the config store.
 
-The config is the single source of truth for how the agent behaves. It lives in
-memory (a module-level singleton) and is mirrored to ``config.json`` so it survives
-server restarts. Updating it does NOT require a restart: the agent is rebuilt from
-the current config on every request.
+Source of truth = in-memory singleton. Persistence: Supabase (``agent_config``) when
+configured, with a local ``config.json`` backup; falls back to the JSON file or the
+defaults when Supabase is unavailable.
 """
 from __future__ import annotations
 
@@ -13,7 +12,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# File where the current config is persisted (git-ignored).
+import db
+
+# Local backup file (git-ignored).
 CONFIG_FILE = Path(__file__).parent / "config.json"
 
 
@@ -33,7 +34,7 @@ class AgentConfig(BaseModel):
     streaming: bool = True
 
 
-# Default config used on first boot (no persisted file yet).
+# Default config used on first boot (no persisted config yet).
 DEFAULT_CONFIG = AgentConfig(
     system_prompt=(
         "You are an expert AI assistant. "
@@ -51,36 +52,46 @@ DEFAULT_CONFIG = AgentConfig(
 
 
 class ConfigStore:
-    """Holds the single source of truth for the agent config (memory + JSON file)."""
+    """Holds the agent config (memory + Supabase + local JSON backup)."""
 
     def __init__(self) -> None:
         self._config = self._load()
+        # Mirror the active state to Supabase (initial sync from local JSON).
+        self._save()
 
     def _load(self) -> AgentConfig:
-        # Load the persisted config if present, otherwise fall back to defaults.
+        # 1) Supabase, 2) local JSON file, 3) defaults.
+        doc = db.load_doc("agent_config")
+        if doc:
+            try:
+                return AgentConfig(**doc)
+            except Exception:
+                pass
         if CONFIG_FILE.exists():
             try:
-                data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                return AgentConfig(**data)
+                return AgentConfig(**json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
             except Exception:
-                # Corrupted/invalid file -> ignore it and use defaults.
-                return DEFAULT_CONFIG.model_copy(deep=True)
+                pass
         return DEFAULT_CONFIG.model_copy(deep=True)
 
+    def _save(self) -> None:
+        # Local backup always; Supabase best-effort.
+        try:
+            CONFIG_FILE.write_text(
+                self._config.model_dump_json(indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
+        db.save_doc("agent_config", self._config.model_dump())
+
     def get(self) -> AgentConfig:
-        """Return the current config."""
         return self._config
 
     def update(self, config: AgentConfig) -> AgentConfig:
-        """Replace the config (hot-reload) and mirror it to disk."""
+        """Replace the config (hot-reload) and persist it."""
         self._config = config
         self._save()
         return self._config
-
-    def _save(self) -> None:
-        CONFIG_FILE.write_text(
-            self._config.model_dump_json(indent=2), encoding="utf-8"
-        )
 
 
 # Module-level singleton imported across the app.

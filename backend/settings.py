@@ -1,7 +1,8 @@
 """User settings: OpenRouter API key, custom prompts, and MCP servers.
 
-Persisted to ``settings.json`` (git-ignored). The API key is stored here so it can
-be set from the UI; it is never sent back to the client in plain text.
+Persistence: Supabase (``app_settings``) when configured, with a local
+``settings.json`` backup; falls back to the JSON file when Supabase is unavailable.
+The API key is never sent back to the client in plain text.
 """
 from __future__ import annotations
 
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+import db
 
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 
@@ -26,9 +29,9 @@ class MCPServer(BaseModel):
 
     name: str = Field(min_length=1, max_length=40)
     transport: Literal["stdio", "sse", "http"] = "stdio"
-    command: str | None = None  # stdio: e.g. "npx"
-    args: list[str] = Field(default_factory=list)  # stdio: e.g. ["-y", "@.../server-filesystem", "."]
-    url: str | None = None  # sse / http
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    url: str | None = None
     enabled: bool = True
 
 
@@ -39,23 +42,36 @@ class Settings(BaseModel):
 
 
 class SettingsStore:
-    """In-memory settings mirrored to a JSON file."""
+    """Holds the settings (memory + Supabase + local JSON backup)."""
 
     def __init__(self) -> None:
         self._settings = self._load()
+        # Mirror the active state to Supabase (initial sync from local JSON).
+        self._save()
 
     def _load(self) -> Settings:
+        # 1) Supabase, 2) local JSON file, 3) empty defaults.
+        doc = db.load_doc("app_settings")
+        if doc:
+            try:
+                return Settings(**doc)
+            except Exception:
+                pass
         if SETTINGS_FILE.exists():
             try:
                 return Settings(**json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
             except Exception:
-                return Settings()
+                pass
         return Settings()
 
     def _save(self) -> None:
-        SETTINGS_FILE.write_text(
-            self._settings.model_dump_json(indent=2), encoding="utf-8"
-        )
+        try:
+            SETTINGS_FILE.write_text(
+                self._settings.model_dump_json(indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
+        db.save_doc("app_settings", self._settings.model_dump())
 
     def get(self) -> Settings:
         return self._settings
