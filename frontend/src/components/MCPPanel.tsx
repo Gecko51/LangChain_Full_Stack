@@ -1,11 +1,19 @@
 "use client";
 
-import { Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Maximize2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,7 +27,67 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useSettings } from "@/hooks/useSettings";
 import { fetchMcpTools } from "@/lib/api";
-import type { McpServerStatus, McpTransport } from "@/types/agent";
+import type { MCPServer, McpServerStatus, McpTransport } from "@/types/agent";
+
+const JSON_PLACEHOLDER = `{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    }
+  }
+}`;
+
+// ----- JSON parsing (accepts a full { "mcpServers": {…} } block, a name→config map,
+// or a single server config) without using `any`. -----
+
+type RawCfg = Record<string, unknown>;
+
+function asArgs(v: unknown): string[] {
+  return Array.isArray(v) ? v.map((x) => String(x)) : [];
+}
+function asStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+function normalizeServer(name: string, raw: unknown): MCPServer | null {
+  if (!raw || typeof raw !== "object") return null;
+  const cfg = raw as RawCfg;
+  const command = asStr(cfg.command);
+  const url = asStr(cfg.url);
+  const rawT = String(cfg.transport ?? cfg.type ?? "").toLowerCase();
+  let transport: McpTransport;
+  if (command) transport = "stdio";
+  else if (url) transport = rawT === "sse" || url.includes("sse") ? "sse" : "http";
+  else transport = rawT === "sse" ? "sse" : rawT.includes("http") ? "http" : "stdio";
+  return {
+    name,
+    transport,
+    command,
+    args: asArgs(cfg.args),
+    url,
+    enabled: cfg.enabled !== false && cfg.disabled !== true,
+  };
+}
+
+function parseServers(text: string): MCPServer[] {
+  const data: unknown = JSON.parse(text);
+  if (!data || typeof data !== "object") throw new Error("expected a JSON object");
+  const obj = data as RawCfg;
+
+  let entries: RawCfg;
+  if (obj.mcpServers && typeof obj.mcpServers === "object") {
+    entries = obj.mcpServers as RawCfg;
+  } else if (obj.command || obj.url) {
+    const single = normalizeServer(asStr(obj.name) ?? "mcp-server", obj);
+    return single ? [single] : [];
+  } else {
+    entries = obj; // assume a name -> config map
+  }
+  return Object.entries(entries)
+    .map(([n, c]) => normalizeServer(n, c))
+    .filter((s): s is MCPServer => s !== null);
+}
 
 export function MCPPanel() {
   const { settings, addMcpServer, removeMcpServer, toggleMcpServer } = useSettings();
@@ -29,12 +97,18 @@ export function MCPPanel() {
   const [loadingTools, setLoadingTools] = useState(false);
 
   // Add-form state.
+  const [addMode, setAddMode] = useState<"form" | "json">("form");
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<McpTransport>("stdio");
   const [command, setCommand] = useState("npx");
   const [argsText, setArgsText] = useState("");
   const [url, setUrl] = useState("");
   const [adding, setAdding] = useState(false);
+
+  // JSON-import state.
+  const [jsonText, setJsonText] = useState("");
+  const [jsonOpen, setJsonOpen] = useState(false);
+  const [addingJson, setAddingJson] = useState(false);
 
   // Connecting to MCP servers spawns processes, so we fetch on demand (mount + after
   // mutations + manual refresh), never on every render.
@@ -90,6 +164,32 @@ export function MCPPanel() {
       toast.error(`Failed: ${(e as Error).message}`);
     } finally {
       setAdding(false);
+    }
+  };
+
+  const onAddFromJson = async (closeDialog: boolean) => {
+    let parsed: MCPServer[];
+    try {
+      parsed = parseServers(jsonText);
+    } catch (e) {
+      toast.error(`Invalid JSON: ${(e as Error).message}`);
+      return;
+    }
+    if (parsed.length === 0) {
+      toast.error("No MCP server found in the JSON.");
+      return;
+    }
+    setAddingJson(true);
+    try {
+      for (const s of parsed) await addMcpServer(s);
+      setJsonText("");
+      if (closeDialog) setJsonOpen(false);
+      toast.success(`Added ${parsed.length} server${parsed.length > 1 ? "s" : ""}`);
+      refreshTools();
+    } catch (e) {
+      toast.error(`Failed: ${(e as Error).message}`);
+    } finally {
+      setAddingJson(false);
     }
   };
 
@@ -172,60 +272,145 @@ export function MCPPanel() {
         )}
       </div>
 
-      {/* ---- Add form ---- */}
+      {/* ---- Add server (form or JSON) ---- */}
       <div className="space-y-2 border-t pt-3">
-        <Label>Add server</Label>
-        <div className="flex gap-2">
-          <Input
-            placeholder="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="font-mono text-xs"
-          />
-          <Select value={transport} onValueChange={(v) => setTransport(v as McpTransport)}>
-            <SelectTrigger className="w-28 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="stdio">stdio</SelectItem>
-              <SelectItem value="sse">sse</SelectItem>
-              <SelectItem value="http">http</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex items-center justify-between">
+          <Label>Add server</Label>
+          <div className="flex gap-1">
+            <Button
+              variant={addMode === "form" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setAddMode("form")}
+            >
+              Form
+            </Button>
+            <Button
+              variant={addMode === "json" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setAddMode("json")}
+            >
+              JSON
+            </Button>
+          </div>
         </div>
-        {transport === "stdio" ? (
-          <>
-            <Input
-              placeholder="command (e.g. npx)"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              className="font-mono text-xs"
-            />
-            <Textarea
-              placeholder={"args, one per line:\n-y\n@modelcontextprotocol/server-filesystem\n."}
-              value={argsText}
-              onChange={(e) => setArgsText(e.target.value)}
-              rows={3}
-              className="resize-none font-mono text-xs"
-            />
-          </>
+
+        {addMode === "json" ? (
+          <div className="space-y-2">
+            <div className="relative">
+              <Textarea
+                value={jsonText}
+                onChange={(e) => setJsonText(e.target.value)}
+                rows={5}
+                placeholder={JSON_PLACEHOLDER}
+                className="resize-none pr-9 font-mono text-xs"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute top-1 right-1 size-7"
+                onClick={() => setJsonOpen(true)}
+                aria-label="Expand JSON editor"
+                title="Expand editor"
+              >
+                <Maximize2 className="size-3.5" />
+              </Button>
+            </div>
+            <Button onClick={() => onAddFromJson(false)} disabled={addingJson || !jsonText.trim()}>
+              {addingJson ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add from JSON
+            </Button>
+          </div>
         ) : (
-          <Input
-            placeholder="https://server/sse"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            className="font-mono text-xs"
-          />
+          <>
+            <div className="flex gap-2">
+              <Input
+                placeholder="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="font-mono text-xs"
+              />
+              <Select value={transport} onValueChange={(v) => setTransport(v as McpTransport)}>
+                <SelectTrigger className="w-28 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="stdio">stdio</SelectItem>
+                  <SelectItem value="sse">sse</SelectItem>
+                  <SelectItem value="http">http</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {transport === "stdio" ? (
+              <>
+                <Input
+                  placeholder="command (e.g. npx)"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  className="font-mono text-xs"
+                />
+                <Textarea
+                  placeholder={"args, one per line:\n-y\n@modelcontextprotocol/server-filesystem\n."}
+                  value={argsText}
+                  onChange={(e) => setArgsText(e.target.value)}
+                  rows={3}
+                  className="resize-none font-mono text-xs"
+                />
+              </>
+            ) : (
+              <Input
+                placeholder="https://server/sse"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                className="font-mono text-xs"
+              />
+            )}
+            <Button onClick={onAdd} disabled={adding || !name.trim()}>
+              {adding ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add server
+            </Button>
+          </>
         )}
-        <Button onClick={onAdd} disabled={adding || !name.trim()}>
-          {adding ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          Add server
-        </Button>
       </div>
+
+      {/* ---- Expanded JSON editor ---- */}
+      <Dialog open={jsonOpen} onOpenChange={setJsonOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add MCP server(s) from JSON</DialogTitle>
+            <DialogDescription>
+              Paste a single server config or a full{" "}
+              <span className="font-mono">{`{ "mcpServers": { … } }`}</span> block.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            placeholder={JSON_PLACEHOLDER}
+            className="max-h-[60vh] min-h-[55vh] resize-none font-mono text-sm"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button onClick={() => onAddFromJson(true)} disabled={addingJson || !jsonText.trim()}>
+              {addingJson ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add from JSON
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
