@@ -139,6 +139,25 @@ def first_user() -> dict | None:
         return None
 
 
+def get_user(username: str) -> dict | None:
+    """One user by username (for login / uniqueness checks)."""
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        resp = (
+            client.table("app_users")
+            .select("username,password_hash")
+            .eq("username", username)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
 def insert_user(username: str, password_hash: str) -> bool:
     client = _get_client()
     if not client:

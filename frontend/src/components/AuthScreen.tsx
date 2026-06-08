@@ -11,8 +11,13 @@ import { useAuth } from "@/hooks/useAuth";
 
 export function AuthScreen() {
   const { registered, login, register } = useAuth();
-  // No account yet -> first connection (register); otherwise log in.
-  const isRegister = registered === false;
+
+  // Default to register when no account exists yet, otherwise login — but the user
+  // can switch freely with the toggle below.
+  const [mode, setMode] = useState<"login" | "register">(
+    registered === false ? "register" : "login",
+  );
+  const isRegister = mode === "register";
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -34,6 +39,11 @@ export function AuthScreen() {
     }
   };
 
+  const switchMode = () => {
+    setMode(isRegister ? "login" : "register");
+    setError(null);
+  };
+
   return (
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
       {/* Violet glow background */}
@@ -51,13 +61,35 @@ export function AuthScreen() {
           </div>
         </div>
 
+        {/* Mode tabs */}
+        <div className="bg-muted flex rounded-lg p-1">
+          {(["login", "register"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setMode(m);
+                setError(null);
+              }}
+              className={
+                "flex-1 rounded-md py-1.5 text-sm font-medium transition-colors " +
+                (mode === m
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground")
+              }
+            >
+              {m === "login" ? "Log in" : "Create account"}
+            </button>
+          ))}
+        </div>
+
         <div className="space-y-1">
           <h2 className="text-lg font-semibold">
             {isRegister ? "Create your account" : "Welcome back"}
           </h2>
           <p className="text-muted-foreground text-sm">
             {isRegister
-              ? "Set a username and password — this is your first connection."
+              ? "Pick a username and password to get started."
               : "Log in to access the playground."}
           </p>
         </div>
@@ -97,6 +129,17 @@ export function AuthScreen() {
           )}
           {isRegister ? "Create account" : "Log in"}
         </Button>
+
+        <p className="text-muted-foreground text-center text-xs">
+          {isRegister ? "Already have an account?" : "No account yet?"}{" "}
+          <button
+            type="button"
+            onClick={switchMode}
+            className="text-primary font-medium hover:underline"
+          >
+            {isRegister ? "Log in" : "Create one"}
+          </button>
+        </p>
       </form>
     </div>
   );
