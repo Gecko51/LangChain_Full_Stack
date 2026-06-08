@@ -33,7 +33,7 @@ export function SystemPromptField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={4}
-        className="resize-none pr-9 font-mono text-xs"
+        className="field-sizing-fixed resize-none pr-9 font-mono text-xs"
       />
 
       <Dialog open={open} onOpenChange={setOpen}>

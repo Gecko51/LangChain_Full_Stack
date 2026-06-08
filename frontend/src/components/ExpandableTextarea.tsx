@@ -45,7 +45,9 @@ export function ExpandableTextarea({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
-        className={cn("resize-none pr-9", className)}
+        // field-sizing-fixed: keep the compact field at its initial size and show a
+        // sample of long content (you expand for the full editor).
+        className={cn("field-sizing-fixed resize-none pr-9", className)}
       />
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>

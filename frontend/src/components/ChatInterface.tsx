@@ -216,7 +216,9 @@ export function ChatInterface() {
               }}
               placeholder="Type a message…  (/ for saved prompts · Shift+Enter = new line)"
               rows={1}
-              className="max-h-40 min-h-10 flex-1 resize-none"
+              // field-sizing-fixed: stay at the initial height and show a sample of long
+              // (e.g. inserted) content instead of growing to fit it.
+              className="field-sizing-fixed max-h-40 min-h-10 flex-1 resize-none"
             />
             {isStreaming ? (
               <Button variant="secondary" size="icon" className="size-10" onClick={cancel}>
