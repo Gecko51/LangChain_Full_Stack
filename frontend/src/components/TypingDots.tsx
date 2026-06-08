@@ -1,11 +1,11 @@
 import { cn } from "@/lib/utils";
 
-// Each dot has its own gradient + colored glow, so the three together read as a
-// violet → fuchsia → pink sweep while they bounce (keyframes in globals.css).
+// Each dot has its own gradient + colored glow, so the three together read as an
+// apple-green → emerald → teal sweep while they bounce (keyframes in globals.css).
 const DOTS = [
-  { grad: "from-violet-500 to-purple-500", glow: "rgba(139, 92, 246, 0.7)" },
-  { grad: "from-purple-500 to-fuchsia-500", glow: "rgba(192, 38, 211, 0.7)" },
-  { grad: "from-fuchsia-500 to-pink-500", glow: "rgba(236, 72, 153, 0.7)" },
+  { grad: "from-lime-300 to-lime-400", glow: "rgba(163, 230, 53, 0.7)" },
+  { grad: "from-lime-400 to-emerald-400", glow: "rgba(52, 211, 153, 0.7)" },
+  { grad: "from-emerald-400 to-teal-400", glow: "rgba(45, 212, 191, 0.7)" },
 ];
 
 // Animated thinking indicator shown before the assistant's first token.

@@ -78,13 +78,13 @@ export default function Home() {
     <SettingsProvider>
       <AgentConfigProvider>
         <div className="relative flex h-dvh flex-col overflow-hidden">
-          {/* Subtle violet glow behind everything. */}
-          <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(60%_45%_at_50%_0%,oklch(0.62_0.23_292/0.10),transparent)]" />
+          {/* Subtle apple-green glow behind everything. */}
+          <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(60%_45%_at_50%_0%,oklch(0.84_0.16_124/0.12),transparent)]" />
 
           {/* ---- Top bar ---- */}
           <header className="flex items-center justify-between border-b px-4 py-2.5">
             <div className="flex items-center gap-2">
-              <Logo className="size-7 rounded-md shadow-lg shadow-violet-500/40" />
+              <Logo className="size-7 rounded-md shadow-lg shadow-lime-400/40" />
               <h1 className="text-sm font-semibold">Agent Playground</h1>
               <span className="text-muted-foreground hidden text-xs sm:inline">
                 · LangChain × OpenRouter
@@ -153,7 +153,7 @@ export default function Home() {
               title="Drag to resize · double-click to reset"
               className="group relative z-10 hidden w-2 shrink-0 touch-none cursor-col-resize lg:-mx-1 lg:flex lg:items-center lg:justify-center"
             >
-              {/* Separator line — violet on hover/drag. */}
+              {/* Separator line — apple green on hover/drag. */}
               <div
                 className={cn(
                   "h-full w-px transition-colors",
