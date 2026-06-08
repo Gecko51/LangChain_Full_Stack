@@ -130,3 +130,17 @@
     @apply font-sans;
   }
 }
+
+/* Lively "thinking" dots: bounce + scale + glow pulse. */
+@keyframes thinking-dot {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0) scale(0.8);
+    opacity: 0.5;
+  }
+  35% {
+    transform: translateY(-7px) scale(1.18);
+    opacity: 1;
+  }
+}
