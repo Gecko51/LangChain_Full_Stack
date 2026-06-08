@@ -150,3 +150,11 @@
 .thinking-dot {
   animation: thinking-dot 0.9s ease-in-out infinite;
 }
+
+/* Radix ScrollArea wraps its content in a display:table element that grows to the
+   content's width — so a wide chat message (e.g. a long code block) widens the whole
+   column. Force it to a plain block so it stays at the column width; wide content
+   (code blocks) then scrolls inside its own box instead of overflowing. */
+[data-slot="scroll-area-viewport"] > div {
+  display: block !important;
+}

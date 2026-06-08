@@ -32,7 +32,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
     >
       <div
         className={cn(
-          "group relative max-w-[85%] rounded-2xl px-4 py-2.5 text-sm",
+          "group relative min-w-0 max-w-[85%] rounded-2xl px-4 py-2.5 text-sm",
           isUser
             ? "rounded-br-sm bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/20"
             : "bg-card rounded-bl-sm border",
