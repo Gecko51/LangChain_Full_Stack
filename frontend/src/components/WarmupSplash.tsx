@@ -2,12 +2,17 @@
 
 // Full-screen splash shown only while the (free-tier) Render backend is waking
 // from sleep. It explains the wait instead of leaving the user on a silent spinner,
-// and disappears automatically once the server answers (see useBackendWarmup).
+// and disappears automatically once the server answers (see useBackendWarmup). If it
+// drags on (e.g. the server is mid-redeploy), it offers a manual reload so the user
+// is never stuck without an action.
+import { RefreshCw } from "lucide-react";
+
 import { Logo } from "@/components/Logo";
 import { TypingDots } from "@/components/TypingDots";
+import { Button } from "@/components/ui/button";
 
 export function WarmupSplash({ elapsed }: { elapsed: number }) {
-  // Cold starts are usually < 60s; acknowledge if it drags on a bit.
+  // A normal cold start is ~50s; past that, reassure + offer a manual reload.
   const takingLong = elapsed >= 45;
 
   return (
@@ -35,9 +40,20 @@ export function WarmupSplash({ elapsed }: { elapsed: number }) {
         </div>
 
         {takingLong ? (
-          <p className="text-muted-foreground/70 text-xs">
-            Almost there — a cold start can take a little longer.
-          </p>
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-muted-foreground/70 text-xs leading-relaxed">
+              This is taking longer than usual — the server may be restarting.
+              It will load on its own, or you can retry.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+            >
+              <RefreshCw className="size-3" />
+              Reload
+            </Button>
+          </div>
         ) : null}
       </div>
     </div>

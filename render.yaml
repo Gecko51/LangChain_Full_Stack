@@ -11,6 +11,13 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /health
+    # Only auto-deploy when the backend (or this blueprint) actually changes.
+    # Frontend-only pushes go to Vercel and must NOT rebuild the backend — a rebuild
+    # means ~8 min of downtime, during which users would hit the cold-start splash.
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
     envVars:
       - key: OPENROUTER_API_KEY
         sync: false # paste your key in the dashboard (kept secret)
