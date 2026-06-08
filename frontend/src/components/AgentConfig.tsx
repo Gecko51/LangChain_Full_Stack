@@ -49,7 +49,7 @@ export function AgentConfig() {
       <Accordion
         type="multiple"
         defaultValue={["llm", "prompt"]}
-        className="min-h-0 flex-1 overflow-y-auto px-3"
+        className="min-h-0 flex-1 overflow-y-auto px-3 pb-4"
       >
         {/* ---- LLM settings ---- */}
         <AccordionItem value="llm">
@@ -184,7 +184,7 @@ export function AgentConfig() {
       </Accordion>
 
       {/* ---- Save bar ---- */}
-      <div className="border-t p-3">
+      <div className="shrink-0 border-t p-3">
         {error ? <p className="text-destructive mb-2 text-xs">{error}</p> : null}
         <Button className="w-full" onClick={save} disabled={saving || !dirty}>
           {saving ? (
