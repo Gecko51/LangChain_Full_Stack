@@ -15,6 +15,10 @@ const REVEAL_AFTER_MS = 2500;
 // Per-probe timeout and the pause between retries (ms).
 const PROBE_TIMEOUT_MS = 10000;
 const RETRY_DELAY_MS = 2000;
+// Hard safety net: never block the app on the splash longer than this, even if the
+// probe never succeeds (e.g. a stuck cached response or a flaky network). The app
+// loads anyway and its own requests take over.
+const GIVE_UP_AFTER_MS = 90000;
 
 export function useBackendWarmup() {
   const [status, setStatus] = useState<WarmupStatus>("checking");
@@ -23,11 +27,15 @@ export function useBackendWarmup() {
 
   useEffect(() => {
     let cancelled = false;
+    let settled = false;
+    let giveUpTimer: ReturnType<typeof setTimeout>;
     startRef.current = Date.now();
 
     // Reveal the splash only if the backend is still silent after a short delay.
     const revealTimer = setTimeout(() => {
-      if (!cancelled) setStatus((s) => (s === "ready" ? s : "warming"));
+      if (!cancelled && !settled) {
+        setStatus((s) => (s === "ready" ? s : "warming"));
+      }
     }, REVEAL_AFTER_MS);
 
     // Tick a seconds counter while we wait (shown on the splash).
@@ -38,14 +46,20 @@ export function useBackendWarmup() {
     }, 1000);
 
     const finish = () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(revealTimer);
+      clearTimeout(giveUpTimer);
       clearInterval(ticker);
       if (!cancelled) setStatus("ready");
     };
 
+    // Safety net: stop blocking after GIVE_UP_AFTER_MS no matter what.
+    giveUpTimer = setTimeout(finish, GIVE_UP_AFTER_MS);
+
     // Poll /health until the server answers — the first hit wakes it from sleep.
     (async () => {
-      while (!cancelled) {
+      while (!cancelled && !settled) {
         if (await checkHealth(PROBE_TIMEOUT_MS)) {
           finish();
           return;
@@ -57,6 +71,7 @@ export function useBackendWarmup() {
     return () => {
       cancelled = true;
       clearTimeout(revealTimer);
+      clearTimeout(giveUpTimer);
       clearInterval(ticker);
     };
   }, []);
