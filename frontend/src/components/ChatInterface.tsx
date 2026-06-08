@@ -1,18 +1,17 @@
 "use client";
 
-import { Eraser, Send, Square } from "lucide-react";
+import { Eraser, Send, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MessageBubble } from "@/components/MessageBubble";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
 import { useAgentStream } from "@/hooks/useAgentStream";
 import { useSettings } from "@/hooks/useSettings";
 import { clearSession } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { AgentStatus, ChatMessage, ToolCall } from "@/types/agent";
+import type { AgentStatus, ChatMessage, CustomPrompt, ToolCall } from "@/types/agent";
 
 const SESSION_ID = "default";
 
@@ -34,6 +33,8 @@ export function ChatInterface() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  // A saved prompt picked from the slash menu — shown as a /name chip, expanded on send.
+  const [activePrompt, setActivePrompt] = useState<CustomPrompt | null>(null);
   const [status, setStatus] = useState<AgentStatus>("idle");
   const assistantIdRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -52,8 +53,9 @@ export function ChatInterface() {
       : [];
   const showSlash = slashQuery !== null && slashMatches.length > 0;
 
-  const selectPrompt = (content: string) => {
-    setInput(content);
+  const selectPrompt = (prompt: CustomPrompt) => {
+    setActivePrompt(prompt); // show a /name chip instead of pasting the full content
+    setInput("");
     inputRef.current?.focus();
   };
 
@@ -102,13 +104,21 @@ export function ChatInterface() {
   });
 
   const handleSend = useCallback(() => {
-    const text = input.trim();
-    if (!text || isStreaming) return;
+    const details = input.trim();
+    if (isStreaming || (!details && !activePrompt)) return;
+
+    // The bubble shows the compact /name; the agent receives the full prompt content.
+    const displayText = activePrompt
+      ? `/${activePrompt.name}${details ? `\n\n${details}` : ""}`
+      : details;
+    const sentText = activePrompt
+      ? `${activePrompt.content}${details ? `\n\n${details}` : ""}`
+      : details;
 
     const userMsg: ChatMessage = {
       id: uid(),
       role: "user",
-      content: text,
+      content: displayText,
       timestamp: Date.now(),
     };
     const assistantMsg: ChatMessage = {
@@ -122,9 +132,10 @@ export function ChatInterface() {
     assistantIdRef.current = assistantMsg.id;
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setInput("");
+    setActivePrompt(null);
     setStatus("thinking");
-    void send(text, SESSION_ID);
-  }, [input, isStreaming, send]);
+    void send(sentText, SESSION_ID);
+  }, [input, activePrompt, isStreaming, send]);
 
   const handleClear = useCallback(async () => {
     cancel();
@@ -192,7 +203,7 @@ export function ChatInterface() {
               {slashMatches.map((p) => (
                 <button
                   key={p.name}
-                  onClick={() => selectPrompt(p.content)}
+                  onClick={() => selectPrompt(p)}
                   className="hover:bg-accent flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
                 >
                   <span className="text-primary shrink-0 font-mono text-sm">/{p.name}</span>
@@ -203,27 +214,44 @@ export function ChatInterface() {
           ) : null}
 
           <div className="flex items-end gap-2">
-            <Textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  // If the slash menu is open, Enter picks the top prompt instead.
-                  if (showSlash) {
-                    selectPrompt(slashMatches[0].content);
-                    return;
+            {/* Input box: an optional /name chip + an auto-growing borderless textarea. */}
+            <div className="border-input focus-within:border-ring focus-within:ring-ring/50 flex flex-1 items-start gap-1.5 rounded-lg border bg-transparent px-2.5 py-2 transition-[color,box-shadow] focus-within:ring-[3px] dark:bg-input/30">
+              {activePrompt ? (
+                <button
+                  type="button"
+                  onClick={() => setActivePrompt(null)}
+                  title="Remove prompt"
+                  className="text-primary bg-primary/15 hover:bg-primary/25 mt-0.5 inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs transition-colors"
+                >
+                  /{activePrompt.name}
+                  <X className="size-3" />
+                </button>
+              ) : null}
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    // If the slash menu is open, Enter picks the top prompt instead.
+                    if (showSlash) {
+                      selectPrompt(slashMatches[0]);
+                      return;
+                    }
+                    handleSend();
                   }
-                  handleSend();
+                }}
+                placeholder={
+                  activePrompt
+                    ? "add details (optional)…"
+                    : "Type a message…  (/ for saved prompts · Shift+Enter = new line)"
                 }
-              }}
-              placeholder="Type a message…  (/ for saved prompts · Shift+Enter = new line)"
-              rows={1}
-              // Auto-grows with the typed content (field-sizing-content, from the base
-              // Textarea) up to max-h, then scrolls.
-              className="max-h-48 min-h-10 flex-1 resize-none"
-            />
+                rows={1}
+                // Auto-grows with the typed content (up to max-h, then scrolls).
+                className="placeholder:text-muted-foreground field-sizing-content max-h-44 min-h-6 flex-1 resize-none bg-transparent text-sm outline-none"
+              />
+            </div>
             {isStreaming ? (
               <Button variant="secondary" size="icon" className="size-10" onClick={cancel}>
                 <Square className="size-4" />
@@ -233,7 +261,7 @@ export function ChatInterface() {
                 size="icon"
                 className="size-10 shadow-lg shadow-primary/30"
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() && !activePrompt}
               >
                 <Send className="size-4" />
               </Button>
