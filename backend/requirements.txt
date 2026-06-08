@@ -24,6 +24,7 @@ langchain-mcp-adapters>=0.2.0
 
 # ===== Built-in tools =====
 ddgs>=6.0.0          # DuckDuckGo search backend for the web_search tool
+tzdata>=2024.1       # IANA timezone DB for zoneinfo (slim images strip the system one)
 
 # ===== Tests =====
 pytest>=8.0.0
