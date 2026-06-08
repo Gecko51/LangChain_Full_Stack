@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # App code (local .json data + venv are excluded via .dockerignore).
 COPY . ./
 
+# Flush logs immediately (so the platform's log viewer shows them live).
+ENV PYTHONUNBUFFERED=1
 # Render injects $PORT; default to 8000 for local runs.
 ENV PORT=8000
 EXPOSE 8000
