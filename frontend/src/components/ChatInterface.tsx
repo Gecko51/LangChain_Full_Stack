@@ -220,9 +220,9 @@ export function ChatInterface() {
               }}
               placeholder="Type a message…  (/ for saved prompts · Shift+Enter = new line)"
               rows={1}
-              // field-sizing-fixed: stay at the initial height and show a sample of long
-              // (e.g. inserted) content instead of growing to fit it.
-              className="field-sizing-fixed max-h-40 min-h-10 flex-1 resize-none"
+              // Auto-grows with the typed content (field-sizing-content, from the base
+              // Textarea) up to max-h, then scrolls.
+              className="max-h-48 min-h-10 flex-1 resize-none"
             />
             {isStreaming ? (
               <Button variant="secondary" size="icon" className="size-10" onClick={cancel}>
