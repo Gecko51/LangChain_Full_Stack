@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { CapabilitiesStrip } from "@/components/CapabilitiesStrip";
 import { ConversationsSidebar } from "@/components/ConversationsSidebar";
 import { MessageBubble } from "@/components/MessageBubble";
 import { PromptVariablesDialog } from "@/components/PromptVariablesDialog";
@@ -316,6 +317,7 @@ export function ChatInterface() {
                   </button>
                 ))}
               </div>
+              <CapabilitiesStrip />
             </div>
           ) : (
             messages.map((m) => <MessageBubble key={m.id} message={m} />)

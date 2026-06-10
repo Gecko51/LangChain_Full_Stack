@@ -169,7 +169,11 @@ export function SchedulesPanel() {
             </div>
           ))}
         </div>
-      ) : null}
+      ) : (
+        <p className="text-muted-foreground pt-1 text-center text-xs">
+          No schedules yet — add one above to run a prompt automatically.
+        </p>
+      )}
     </div>
   );
 }

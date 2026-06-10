@@ -118,7 +118,11 @@ export function KnowledgePanel() {
             </div>
           ))}
         </div>
-      ) : null}
+      ) : (
+        <p className="text-muted-foreground pt-1 text-center text-xs">
+          No documents yet — paste one above so the agent can answer from it.
+        </p>
+      )}
     </div>
   );
 }

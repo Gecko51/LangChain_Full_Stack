@@ -54,6 +54,11 @@ export function AgentConfig() {
         defaultValue={["llm", "prompt"]}
         className="min-h-0 flex-1 overflow-y-auto px-3 pb-4"
       >
+        {/* ---- Group: how the agent thinks ---- */}
+        <p className="text-muted-foreground/70 px-1 pt-1 pb-0.5 text-[10px] font-medium tracking-wider uppercase">
+          Agent
+        </p>
+
         {/* ---- LLM settings ---- */}
         <AccordionItem value="llm">
           <AccordionTrigger>LLM Settings</AccordionTrigger>
@@ -145,6 +150,11 @@ export function AgentConfig() {
             </div>
           </AccordionContent>
         </AccordionItem>
+
+        {/* ---- Group: what the agent can access & do ---- */}
+        <p className="text-muted-foreground/70 mt-2 px-1 pt-1 pb-0.5 text-[10px] font-medium tracking-wider uppercase">
+          Capabilities
+        </p>
 
         {/* ---- Memory ---- */}
         <AccordionItem value="memory">
