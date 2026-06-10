@@ -29,3 +29,7 @@ services:
         sync: false # set to your Vercel URL once the frontend is live (comma-separated for several)
       - key: AUTH_SECRET
         generateValue: true # Render generates a strong random secret for signing login JWTs
+      - key: SCHEDULER_SECRET
+        sync: false # gates POST /scheduled/run-due — set the SAME value as the GitHub
+        # Actions secret SCHEDULER_SECRET so the keep-alive cron can trigger scheduled
+        # runs. Leave unset to keep scheduled tasks disabled (the endpoint returns 503).
