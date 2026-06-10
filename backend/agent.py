@@ -29,9 +29,10 @@ from langchain_core.tools import BaseTool
 
 from config import AgentConfig
 from mcp_manager import get_mcp_tools
+from memory_store import memory_preamble, memory_store
 from sessions import session_store
 from settings import Settings
-from tools import get_enabled_tools
+from tools import get_enabled_tools, make_memory_tools
 
 # The API key from the environment (.env), captured once at import. The UI can
 # override it via settings; that takes precedence when present.
@@ -68,20 +69,30 @@ async def fetch_generation_cost(generation_id: str, user_key: str | None) -> flo
     return None
 
 
-async def gather_tools(config: AgentConfig, mcp_servers: list) -> list[BaseTool]:
-    """Enabled built-in tools + tools from the user's enabled MCP servers."""
+async def gather_tools(
+    config: AgentConfig, mcp_servers: list, username: str
+) -> list[BaseTool]:
+    """Enabled built-in tools + the user's `remember` tool (when long-term memory is on)
+    + tools from the user's enabled MCP servers."""
     builtin = get_enabled_tools(config.tools_enabled)
+    memory = make_memory_tools(username, memory_store) if config.longterm_memory else []
     mcp = await get_mcp_tools(mcp_servers)
-    return [*builtin, *mcp]
+    return [*builtin, *memory, *mcp]
 
 
-def build_agent(config: AgentConfig, tools: list[BaseTool], api_key: str | None):
+def build_agent(
+    config: AgentConfig,
+    tools: list[BaseTool],
+    api_key: str | None,
+    system_prompt: str | None = None,
+):
     """Create a fresh agent from the given config and pre-gathered tools.
 
-    The resolved key (the user's, else the .env key) is passed EXPLICITLY to the model
-    via ``api_key=`` — never written to ``os.environ``. Mutating the process-global env
-    is concurrency-hostile and, with concurrent users, could bill one user's request to
-    another user's key (a keyless user would inherit the previous request's key).
+    ``system_prompt`` overrides ``config.system_prompt`` (used to append the long-term
+    memory block). The resolved key (the user's, else the .env key) is passed EXPLICITLY
+    to the model via ``api_key=`` — never written to ``os.environ``. Mutating the
+    process-global env is concurrency-hostile and, with concurrent users, could bill one
+    user's request to another user's key (a keyless user would inherit the previous key).
     """
     key = _resolve_api_key(api_key)
     if not key:
@@ -96,7 +107,9 @@ def build_agent(config: AgentConfig, tools: list[BaseTool], api_key: str | None)
         max_tokens=config.max_tokens,
         api_key=key,  # ChatOpenRouter accepts the `api_key` alias — kept per-request
     )
-    return create_agent(model=model, tools=tools, system_prompt=config.system_prompt)
+    return create_agent(
+        model=model, tools=tools, system_prompt=system_prompt or config.system_prompt
+    )
 
 
 def _event(event: str, data: dict) -> dict:
@@ -113,8 +126,14 @@ async def stream_chat(
 ) -> AsyncIterator[dict]:
     """Yield SSE events for one chat turn: token / tool_start / tool_end / done / error."""
     try:
-        tools = await gather_tools(config, settings.mcp_servers)
-        agent = build_agent(config, tools, settings.openrouter_api_key)
+        tools = await gather_tools(config, settings.mcp_servers, username)
+        # Long-term memory: prepend saved facts to the system prompt so the agent
+        # "knows" them automatically (bounded by a char budget for flat cost).
+        memories = memory_store.get(username) if config.longterm_memory else []
+        system_prompt = config.system_prompt + memory_preamble(memories)
+        agent = build_agent(
+            config, tools, settings.openrouter_api_key, system_prompt=system_prompt
+        )
     except Exception as exc:  # noqa: BLE001
         yield _event("error", {"error": "build_error", "detail": str(exc)})
         return

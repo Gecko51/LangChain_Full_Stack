@@ -196,6 +196,31 @@ def web_search(query: str) -> str:
         return f"Error: search for '{query}' failed ({exc})"
 
 
+def make_memory_tools(username: str, store) -> list[BaseTool]:
+    """Build the user-scoped long-term-memory tool(s).
+
+    ``username`` is bound via closure so the agent can ONLY ever write to its own user's
+    memory — there is no way to address another account. ``store`` is the MemoryStore
+    (passed in to keep this module free of a memory_store import).
+    """
+
+    @tool
+    def remember(fact: str) -> str:
+        """Save an important, durable fact about the user or their business to long-term
+        memory, so you can recall it in future conversations.
+
+        Use for STABLE things — names, roles, preferences, ongoing projects, goals, key
+        business context — NOT for transient details of the current chat. Keep each fact
+        short and self-contained (one sentence).
+        """
+        item = store.add(username, fact)
+        if item is None:
+            return "Already in memory (or empty) — nothing to add."
+        return "Saved to long-term memory."
+
+    return [remember]
+
+
 # Registry: tool name -> tool instance.
 TOOL_REGISTRY: dict[str, BaseTool] = {
     t.name: t for t in (web_search, calculator, current_datetime, position, http_get)

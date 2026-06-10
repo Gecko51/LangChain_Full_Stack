@@ -2,6 +2,7 @@
 
 import { Loader2, RotateCcw, Save, Trash2 } from "lucide-react";
 
+import { MemoriesPanel } from "@/components/MemoriesPanel";
 import { ModelSelector } from "@/components/ModelSelector";
 import { ToolsPanel } from "@/components/ToolsPanel";
 import {
@@ -222,6 +223,21 @@ export function AgentConfig() {
                 </div>
               )}
             </div>
+
+            {/* ---- Long-term memory (durable facts recalled across every chat) ---- */}
+            <div className="flex items-center justify-between border-t pt-3">
+              <div>
+                <Label>Long-term memory</Label>
+                <p className="text-muted-foreground text-[11px]">
+                  Remember facts across every chat
+                </p>
+              </div>
+              <Switch
+                checked={config.longterm_memory}
+                onCheckedChange={(v) => setConfig({ longterm_memory: v })}
+              />
+            </div>
+            {config.longterm_memory ? <MemoriesPanel /> : null}
           </AccordionContent>
         </AccordionItem>
 

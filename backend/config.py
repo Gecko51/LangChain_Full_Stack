@@ -31,6 +31,9 @@ class AgentConfig(BaseModel):
     tools_enabled: list[str] = Field(default_factory=list)
     memory_enabled: bool = True
     memory_window: int = Field(default=10, ge=1, le=20)
+    # Long-term memory: inject saved facts into the prompt + give the agent a `remember`
+    # tool. Distinct from `memory_enabled` (the short-term conversation window).
+    longterm_memory: bool = True
     streaming: bool = True
 
 
@@ -47,6 +50,7 @@ DEFAULT_CONFIG = AgentConfig(
     tools_enabled=[],
     memory_enabled=True,
     memory_window=10,
+    longterm_memory=True,
     streaming=True,
 )
 

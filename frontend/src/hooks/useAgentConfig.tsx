@@ -26,6 +26,7 @@ const FALLBACK_CONFIG: AgentConfig = {
   tools_enabled: [],
   memory_enabled: true,
   memory_window: 10,
+  longterm_memory: true,
   streaming: true,
 };
 

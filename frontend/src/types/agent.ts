@@ -11,7 +11,15 @@ export interface AgentConfig {
   tools_enabled: string[];
   memory_enabled: boolean;
   memory_window: number;
+  longterm_memory: boolean; // durable cross-session facts + the `remember` tool
   streaming: boolean;
+}
+
+// A long-term memory: a durable fact the agent recalls across sessions.
+export interface Memory {
+  id: string;
+  content: string;
+  created_at: string;
 }
 
 export interface ToolInfo {

@@ -16,7 +16,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 import httpx  # noqa: E402
 from fastapi import APIRouter, Depends, FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from pydantic import BaseModel  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 from sse_starlette.sse import EventSourceResponse  # noqa: E402
 
 import auth  # noqa: E402
@@ -25,6 +25,7 @@ from agent import fetch_generation_cost, stream_chat  # noqa: E402
 from config import AgentConfig, config_store  # noqa: E402
 from connectors import CONNECTOR_CATALOG  # noqa: E402
 from mcp_manager import discover  # noqa: E402
+from memory_store import memory_store  # noqa: E402
 from schemas import ChatRequest  # noqa: E402
 from sessions import session_store  # noqa: E402
 from settings import CustomPrompt, MCPServer, settings_store  # noqa: E402
@@ -79,6 +80,10 @@ class ArchiveBody(BaseModel):
 
 class AllowedToolsBody(BaseModel):
     allowed_tools: list[str] | None = None  # None = all tools enabled
+
+
+class MemoryBody(BaseModel):
+    content: str = Field(min_length=1, max_length=500)
 
 
 def _archive_title(messages: list[dict]) -> str:
@@ -288,6 +293,36 @@ async def mcp_tools(user: str = Depends(auth.require_auth)) -> list[dict]:
 def list_connectors(user: str = Depends(auth.require_auth)) -> list[dict]:
     """Curated MCP connector catalog — templates for one-click 'Connect <tool>' cards."""
     return CONNECTOR_CATALOG
+
+
+# ----- Long-term memory (durable facts the agent recalls across sessions) -----
+
+
+@protected.get("/memories")
+def list_memories(user: str = Depends(auth.require_auth)) -> dict:
+    """The user's saved long-term memories (newest first)."""
+    return {"memories": list(reversed(memory_store.get(user)))}
+
+
+@protected.post("/memories")
+def add_memory(body: MemoryBody, user: str = Depends(auth.require_auth)) -> dict:
+    """Manually add a memory (the agent also adds them via its `remember` tool)."""
+    memory_store.add(user, body.content)
+    return {"memories": list(reversed(memory_store.get(user)))}
+
+
+@protected.delete("/memories/{mem_id}")
+def delete_memory(mem_id: str, user: str = Depends(auth.require_auth)) -> dict:
+    """Forget one memory by id."""
+    memory_store.delete(user, mem_id)
+    return {"memories": list(reversed(memory_store.get(user)))}
+
+
+@protected.delete("/memories")
+def clear_memories(user: str = Depends(auth.require_auth)) -> dict:
+    """Forget all of the user's memories."""
+    memory_store.clear(user)
+    return {"memories": []}
 
 
 # ----- Chat -----

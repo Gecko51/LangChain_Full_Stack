@@ -7,6 +7,7 @@ import type {
   CustomPrompt,
   MCPServer,
   McpServerStatus,
+  Memory,
   ModelInfo,
   ToolInfo,
 } from "@/types/agent";
@@ -260,6 +261,38 @@ export async function fetchConnectors(): Promise<Connector[]> {
   const res = await apiFetch("/connectors");
   if (!res.ok) throw new Error(`GET /connectors failed: ${res.status}`);
   return res.json();
+}
+
+// ----- Long-term memory -----
+
+export async function fetchMemories(): Promise<Memory[]> {
+  const res = await apiFetch("/memories");
+  if (!res.ok) throw new Error(`GET /memories failed: ${res.status}`);
+  return (await res.json()).memories as Memory[];
+}
+
+export async function addMemory(content: string): Promise<Memory[]> {
+  const res = await apiFetch("/memories", {
+    method: "POST",
+    headers: JSON_CT,
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error(`POST /memories failed: ${res.status}`);
+  return (await res.json()).memories as Memory[];
+}
+
+export async function deleteMemory(id: string): Promise<Memory[]> {
+  const res = await apiFetch(`/memories/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`DELETE /memories failed: ${res.status}`);
+  return (await res.json()).memories as Memory[];
+}
+
+export async function clearMemories(): Promise<Memory[]> {
+  const res = await apiFetch("/memories", { method: "DELETE" });
+  if (!res.ok) throw new Error(`DELETE /memories failed: ${res.status}`);
+  return (await res.json()).memories as Memory[];
 }
 
 // ----- Auth (public — no token yet) -----
