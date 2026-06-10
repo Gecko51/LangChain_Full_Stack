@@ -287,9 +287,35 @@ export function ChatInterface() {
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 p-4">
           {messages.length === 0 ? (
-            <div className="text-muted-foreground flex h-full flex-col items-center justify-center py-20 text-center text-sm">
-              <p className="mb-1 text-base">👋 Start a conversation</p>
-              <p>Tune the agent, then send a message.</p>
+            <div className="flex h-full flex-col items-center justify-center gap-5 py-12 text-center">
+              <div>
+                <p className="mb-1 text-lg font-medium">👋 Start a conversation</p>
+                <p className="text-muted-foreground text-sm">
+                  I can use your connected tools, remember facts about you, and search
+                  your documents. Try one of these:
+                </p>
+              </div>
+              <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
+                {[
+                  { icon: "✨", text: "What can you help me with?" },
+                  { icon: "🧠", text: "Remember that my main offer is " },
+                  { icon: "✍️", text: "Write a short, friendly LinkedIn connection message" },
+                  { icon: "📊", text: "Help me plan a week of LinkedIn content about " },
+                ].map((s) => (
+                  <button
+                    key={s.text}
+                    type="button"
+                    onClick={() => {
+                      setInput(s.text);
+                      inputRef.current?.focus();
+                    }}
+                    className="hover:border-primary/50 hover:bg-accent/40 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors"
+                  >
+                    <span className="mr-1.5">{s.icon}</span>
+                    <span className="text-muted-foreground">{s.text}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             messages.map((m) => <MessageBubble key={m.id} message={m} />)
