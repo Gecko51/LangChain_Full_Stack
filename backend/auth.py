@@ -2,8 +2,9 @@
 
 Accounts (username + bcrypt password) are stored in Supabase (``app_users``) with a
 local JSON mirror, so login keeps working if Supabase is paused. Anyone can create an
-account (open registration) — they all share the same playground. Passwords are
-bcrypt-hashed; tokens are JWTs signed with ``AUTH_SECRET``.
+account (open registration); each account gets its own private, isolated namespace
+(config, settings, sessions, archives keyed by username). Passwords are bcrypt-hashed;
+tokens are JWTs signed with ``AUTH_SECRET`` (required — see ``_resolve_secret``).
 """
 from __future__ import annotations
 
@@ -19,9 +20,48 @@ from fastapi import Header, HTTPException
 import db
 
 USERS_FILE = Path(__file__).parent / "auth_users.json"
-_SECRET = os.environ.get("AUTH_SECRET") or "dev-insecure-secret-change-me"
+_DEV_DEFAULT = "dev-insecure-secret-change-me"
 _ALGO = "HS256"
 _TTL = 7 * 24 * 3600  # 7 days
+
+
+# Obvious placeholder/weak secrets we refuse even if explicitly set — these are the
+# values people copy from examples (the .env.example used to ship "change-me").
+_WEAK_SECRETS = {
+    _DEV_DEFAULT,
+    "change-me",
+    "changeme",
+    "secret",
+    "password",
+    "your-secret-here",
+    "sk-or-...",
+}
+
+
+def _resolve_secret() -> str:
+    """The HS256 signing secret. Fail closed: refuse to run with a guessable secret.
+
+    A missing, default, weak (a known placeholder) or too-short ``AUTH_SECRET`` means
+    tokens could be forged for any username. We raise at import time so a misconfigured
+    deploy crashes loudly instead of running wide open. ``ALLOW_INSECURE_AUTH=1`` is an
+    explicit escape hatch for local dev/tests (render.yaml injects a generated, strong
+    AUTH_SECRET in production, so prod is unaffected).
+    """
+    secret = (os.environ.get("AUTH_SECRET") or "").strip()
+    strong = len(secret) >= 16 and secret.lower() not in _WEAK_SECRETS
+    if strong:
+        return secret
+    if os.environ.get("ALLOW_INSECURE_AUTH"):
+        return secret or _DEV_DEFAULT
+    raise RuntimeError(
+        "AUTH_SECRET is unset or too weak (need a random value of at least 16 chars; "
+        "placeholders like 'change-me' are rejected). Generate one with:\n"
+        '  python -c "import secrets; print(secrets.token_urlsafe(48))"\n'
+        "or set ALLOW_INSECURE_AUTH=1 for local development only."
+    )
+
+
+_SECRET = _resolve_secret()
 
 
 # ----- local mirror (offline fallback): {username: password_hash} -----

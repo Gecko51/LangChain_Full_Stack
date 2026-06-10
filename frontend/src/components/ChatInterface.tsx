@@ -139,6 +139,16 @@ export function ChatInterface() {
     void send(sentText, SESSION_ID);
   }, [input, activePrompt, isStreaming, send]);
 
+  // Stop streaming: abort the request AND finalize the in-flight bubble + status.
+  // (cancel() alone leaves the bubble showing "streaming" and the badge on "Streaming"
+  // forever, because the abort path fires no completion callback.)
+  const handleStop = useCallback(() => {
+    cancel();
+    patchAssistant((m) => ({ ...m, streaming: false }));
+    assistantIdRef.current = null;
+    setStatus("idle");
+  }, [cancel, patchAssistant]);
+
   const handleClear = useCallback(async () => {
     cancel();
     setMessages([]);
@@ -296,7 +306,7 @@ export function ChatInterface() {
               />
             </div>
             {isStreaming ? (
-              <Button variant="secondary" size="icon" className="size-10" onClick={cancel}>
+              <Button variant="secondary" size="icon" className="size-10" onClick={handleStop}>
                 <Square className="size-4" />
               </Button>
             ) : (

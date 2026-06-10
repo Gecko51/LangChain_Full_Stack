@@ -16,6 +16,7 @@ import {
   login as apiLogin,
   register as apiRegister,
   setAuthToken,
+  setOnUnauthorized,
 } from "@/lib/api";
 
 const TOKEN_KEY = "agentpg_token";
@@ -88,6 +89,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   }, []);
+
+  // Any protected request returning 401 (expired/invalid token) logs out, so an
+  // expired session lands on the login screen instead of a broken app.
+  useEffect(() => {
+    setOnUnauthorized(logout);
+    return () => setOnUnauthorized(null);
+  }, [logout]);
 
   return (
     <AuthContext.Provider

@@ -78,17 +78,23 @@ async def gather_tools(config: AgentConfig, mcp_servers: list) -> list[BaseTool]
 def build_agent(config: AgentConfig, tools: list[BaseTool], api_key: str | None):
     """Create a fresh agent from the given config and pre-gathered tools.
 
-    The OpenRouter provider reads ``OPENROUTER_API_KEY`` from the environment, so we
-    set it from the resolved key (the user's, else .env) just before building.
+    The resolved key (the user's, else the .env key) is passed EXPLICITLY to the model
+    via ``api_key=`` — never written to ``os.environ``. Mutating the process-global env
+    is concurrency-hostile and, with concurrent users, could bill one user's request to
+    another user's key (a keyless user would inherit the previous request's key).
     """
     key = _resolve_api_key(api_key)
-    if key:
-        os.environ["OPENROUTER_API_KEY"] = key
+    if not key:
+        raise ValueError(
+            "No OpenRouter API key configured. Add your key in Settings "
+            "(or set OPENROUTER_API_KEY on the server)."
+        )
 
     model = init_chat_model(
         f"openrouter:{config.model}",
         temperature=config.temperature,
         max_tokens=config.max_tokens,
+        api_key=key,  # ChatOpenRouter accepts the `api_key` alias — kept per-request
     )
     return create_agent(model=model, tools=tools, system_prompt=config.system_prompt)
 
@@ -126,6 +132,7 @@ async def stream_chat(
     seen_tool_calls: set[str] = set()
     usage_md: dict | None = None  # OpenRouter token usage (last LLM call)
     gen_id: str | None = None  # OpenRouter generation id (for the cost lookup)
+    persisted = False  # did we already save this turn?
 
     try:
         async for chunk in agent.astream(
@@ -189,6 +196,7 @@ async def stream_chat(
         content = "".join(final_parts)
         # Persist the turn so memory works across requests.
         session_store.append(username, session_id, user_msg, AIMessage(content=content))
+        persisted = True
         # Token usage (cost is fetched lazily by the client via /chat/cost).
         if usage_md:
             details = usage_md.get("output_token_details") or {}
@@ -207,3 +215,11 @@ async def stream_chat(
     except Exception as exc:  # noqa: BLE001
         # Any failure ends the stream with a structured error event.
         yield _event("error", {"error": "agent_error", "detail": str(exc)})
+    finally:
+        # If the client aborted mid-stream (Stop button → GeneratorExit, not caught
+        # above), still persist the partial turn so the UI (which keeps the partial
+        # bubble) and the agent's memory stay in sync on the next message.
+        if not persisted and final_parts:
+            session_store.append(
+                username, session_id, user_msg, AIMessage(content="".join(final_parts))
+            )

@@ -20,6 +20,8 @@ export const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ??
   "https://agent-playground-api.onrender.com";
 
+const JSON_CT = { "Content-Type": "application/json" };
+
 // Liveness probe (public, no auth). Used by the warmup splash to detect a cold
 // (sleeping) Render backend and dismiss the splash as soon as it answers.
 export async function checkHealth(timeoutMs = 10000): Promise<boolean> {
@@ -50,8 +52,28 @@ export function getAuthHeaders(): Record<string, string> {
   return _authToken ? { Authorization: `Bearer ${_authToken}` } : {};
 }
 
-function jsonHeaders(): Record<string, string> {
-  return { "Content-Type": "application/json", ...getAuthHeaders() };
+// The AuthProvider registers a logout handler here. Any authenticated call that comes
+// back 401 (expired or invalid token) fires it so the app returns to the login screen
+// instead of leaving the user stuck in a broken app with every request failing.
+let _onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(cb: (() => void) | null): void {
+  _onUnauthorized = cb;
+}
+
+// All authenticated backend calls go through this: it injects the auth header and, on
+// a 401, fires the logout handler before the caller sees the failure. Returns the raw
+// Response (so streaming callers like useAgentStream can read .body).
+export async function apiFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    ...init,
+    headers: { ...getAuthHeaders(), ...((init.headers as Record<string, string>) ?? {}) },
+  });
+  if (res.status === 401) _onUnauthorized?.();
+  return res;
 }
 
 async function detail(res: Response): Promise<string> {
@@ -66,15 +88,15 @@ async function detail(res: Response): Promise<string> {
 // ----- Config -----
 
 export async function fetchConfig(): Promise<AgentConfig> {
-  const res = await fetch(`${BACKEND_URL}/config`, { headers: getAuthHeaders() });
+  const res = await apiFetch("/config");
   if (!res.ok) throw new Error(`GET /config failed: ${res.status}`);
   return res.json();
 }
 
 export async function saveConfig(config: AgentConfig): Promise<AgentConfig> {
-  const res = await fetch(`${BACKEND_URL}/config`, {
+  const res = await apiFetch("/config", {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: JSON_CT,
     body: JSON.stringify(config),
   });
   if (!res.ok) throw new Error(`POST /config failed: ${res.status}`);
@@ -82,22 +104,19 @@ export async function saveConfig(config: AgentConfig): Promise<AgentConfig> {
 }
 
 export async function fetchModels(): Promise<ModelInfo[]> {
-  const res = await fetch(`${BACKEND_URL}/models`, { headers: getAuthHeaders() });
+  const res = await apiFetch("/models");
   if (!res.ok) throw new Error(`GET /models failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchTools(): Promise<ToolInfo[]> {
-  const res = await fetch(`${BACKEND_URL}/tools`, { headers: getAuthHeaders() });
+  const res = await apiFetch("/tools");
   if (!res.ok) throw new Error(`GET /tools failed: ${res.status}`);
   return res.json();
 }
 
 export async function clearSession(sessionId: string): Promise<void> {
-  await fetch(`${BACKEND_URL}/sessions/${sessionId}`, {
-    method: "DELETE",
-    headers: getAuthHeaders(),
-  });
+  await apiFetch(`/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
 }
 
 // OpenRouter cost (USD) of a generation — fetched lazily when the user opens the
@@ -105,10 +124,7 @@ export async function clearSession(sessionId: string): Promise<void> {
 export async function fetchGenerationCost(
   generationId: string,
 ): Promise<number | null> {
-  const res = await fetch(
-    `${BACKEND_URL}/chat/cost/${encodeURIComponent(generationId)}`,
-    { headers: getAuthHeaders() },
-  );
+  const res = await apiFetch(`/chat/cost/${encodeURIComponent(generationId)}`);
   if (!res.ok) return null;
   const data = await res.json();
   return (data.cost ?? null) as number | null;
@@ -117,7 +133,7 @@ export async function fetchGenerationCost(
 // ----- Chat archives (saved past conversations) -----
 
 export async function fetchArchives(): Promise<ChatArchive[]> {
-  const res = await fetch(`${BACKEND_URL}/archives`, { headers: getAuthHeaders() });
+  const res = await apiFetch("/archives");
   if (!res.ok) throw new Error(`GET /archives failed: ${res.status}`);
   return (await res.json()).archives as ChatArchive[];
 }
@@ -125,9 +141,9 @@ export async function fetchArchives(): Promise<ChatArchive[]> {
 export async function createArchive(
   messages: ArchiveMessage[],
 ): Promise<ChatArchive[]> {
-  const res = await fetch(`${BACKEND_URL}/archives`, {
+  const res = await apiFetch("/archives", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    headers: JSON_CT,
     body: JSON.stringify({ messages }),
   });
   if (!res.ok) throw new Error(`POST /archives failed: ${res.status}`);
@@ -135,18 +151,16 @@ export async function createArchive(
 }
 
 export async function restoreArchive(id: string): Promise<ArchiveMessage[]> {
-  const res = await fetch(`${BACKEND_URL}/archives/${encodeURIComponent(id)}/restore`, {
+  const res = await apiFetch(`/archives/${encodeURIComponent(id)}/restore`, {
     method: "POST",
-    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`restore /archives failed: ${res.status}`);
   return (await res.json()).messages as ArchiveMessage[];
 }
 
 export async function deleteArchive(id: string): Promise<ChatArchive[]> {
-  const res = await fetch(`${BACKEND_URL}/archives/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/archives/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`DELETE /archives failed: ${res.status}`);
   return (await res.json()).archives as ChatArchive[];
@@ -155,15 +169,15 @@ export async function deleteArchive(id: string): Promise<ChatArchive[]> {
 // ----- Settings -----
 
 export async function fetchSettings(): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/settings`, { headers: getAuthHeaders() });
+  const res = await apiFetch("/settings");
   if (!res.ok) throw new Error(`GET /settings failed: ${res.status}`);
   return res.json();
 }
 
 export async function setApiKey(api_key: string): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/settings/api-key`, {
+  const res = await apiFetch("/settings/api-key", {
     method: "PUT",
-    headers: jsonHeaders(),
+    headers: JSON_CT,
     body: JSON.stringify({ api_key }),
   });
   if (!res.ok) throw new Error(`PUT /settings/api-key failed: ${res.status}`);
@@ -171,18 +185,15 @@ export async function setApiKey(api_key: string): Promise<AppSettings> {
 }
 
 export async function clearApiKey(): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/settings/api-key`, {
-    method: "DELETE",
-    headers: getAuthHeaders(),
-  });
+  const res = await apiFetch("/settings/api-key", { method: "DELETE" });
   if (!res.ok) throw new Error(`DELETE /settings/api-key failed: ${res.status}`);
   return res.json();
 }
 
 export async function addPrompt(prompt: CustomPrompt): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/prompts`, {
+  const res = await apiFetch("/prompts", {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: JSON_CT,
     body: JSON.stringify(prompt),
   });
   if (!res.ok) throw new Error(`POST /prompts failed: ${res.status}`);
@@ -190,9 +201,8 @@ export async function addPrompt(prompt: CustomPrompt): Promise<AppSettings> {
 }
 
 export async function deletePrompt(name: string): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/prompts/${encodeURIComponent(name)}`, {
+  const res = await apiFetch(`/prompts/${encodeURIComponent(name)}`, {
     method: "DELETE",
-    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`DELETE /prompts failed: ${res.status}`);
   return res.json();
@@ -201,9 +211,9 @@ export async function deletePrompt(name: string): Promise<AppSettings> {
 // ----- MCP servers -----
 
 export async function addMcpServer(server: MCPServer): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/mcp/servers`, {
+  const res = await apiFetch("/mcp/servers", {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: JSON_CT,
     body: JSON.stringify(server),
   });
   if (!res.ok) throw new Error(`POST /mcp/servers failed: ${res.status}`);
@@ -211,30 +221,28 @@ export async function addMcpServer(server: MCPServer): Promise<AppSettings> {
 }
 
 export async function deleteMcpServer(name: string): Promise<AppSettings> {
-  const res = await fetch(`${BACKEND_URL}/mcp/servers/${encodeURIComponent(name)}`, {
+  const res = await apiFetch(`/mcp/servers/${encodeURIComponent(name)}`, {
     method: "DELETE",
-    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`DELETE /mcp/servers failed: ${res.status}`);
   return res.json();
 }
 
 export async function toggleMcpServer(name: string): Promise<AppSettings> {
-  const res = await fetch(
-    `${BACKEND_URL}/mcp/servers/${encodeURIComponent(name)}/toggle`,
-    { method: "POST", headers: getAuthHeaders() },
-  );
+  const res = await apiFetch(`/mcp/servers/${encodeURIComponent(name)}/toggle`, {
+    method: "POST",
+  });
   if (!res.ok) throw new Error(`POST /mcp/servers/toggle failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchMcpTools(): Promise<McpServerStatus[]> {
-  const res = await fetch(`${BACKEND_URL}/mcp/tools`, { headers: getAuthHeaders() });
+  const res = await apiFetch("/mcp/tools");
   if (!res.ok) throw new Error(`GET /mcp/tools failed: ${res.status}`);
   return res.json();
 }
 
-// ----- Auth -----
+// ----- Auth (public — no token yet) -----
 
 export async function fetchAuthStatus(): Promise<{ registered: boolean }> {
   const res = await fetch(`${BACKEND_URL}/auth/status`);
@@ -248,7 +256,7 @@ export async function register(
 ): Promise<{ token: string; username: string }> {
   const res = await fetch(`${BACKEND_URL}/auth/register`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: JSON_CT,
     body: JSON.stringify({ username, password }),
   });
   if (!res.ok) throw new Error(await detail(res));
@@ -261,7 +269,7 @@ export async function login(
 ): Promise<{ token: string; username: string }> {
   const res = await fetch(`${BACKEND_URL}/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: JSON_CT,
     body: JSON.stringify({ username, password }),
   });
   if (!res.ok) throw new Error(await detail(res));

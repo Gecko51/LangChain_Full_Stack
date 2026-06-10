@@ -5,27 +5,61 @@ decorator. MCP-provided tools will be merged into this registry in Phase 2.
 """
 from __future__ import annotations
 
+import ast
 import datetime as _dt
+import ipaddress
 import json
-import re
+import operator
+import socket
+from urllib.parse import urljoin
 
 import httpx
 from langchain_core.tools import BaseTool, tool
+
+
+# Safe arithmetic via an AST walker (no eval). Only these operators are allowed —
+# crucially NOT Pow (**), so `9**9**9` (a CPU/RAM bomb) can't be expressed at all.
+_BINOPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Mod: operator.mod,
+    ast.FloorDiv: operator.floordiv,
+}
+_UNARYOPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+_NUM_LIMIT = 1e15  # reject absurd operands/results as defense-in-depth
+
+
+def _eval_node(node: ast.AST) -> float | int:
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        if abs(node.value) > _NUM_LIMIT:
+            raise ValueError("number too large")
+        return node.value
+    if isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
+        result = _BINOPS[type(node.op)](_eval_node(node.left), _eval_node(node.right))
+        if isinstance(result, (int, float)) and abs(result) > _NUM_LIMIT:
+            raise ValueError("result too large")
+        return result
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARYOPS:
+        return _UNARYOPS[type(node.op)](_eval_node(node.operand))
+    raise ValueError("unsupported expression")
 
 
 @tool
 def calculator(expression: str) -> str:
     """Evaluate a basic arithmetic expression like "3 * (4 + 2)".
 
-    Only digits and the characters + - * / ( ) . % are allowed.
+    Supports + - * / % // and parentheses over numbers. Exponentiation (**) is not
+    supported (it is a denial-of-service vector).
     """
-    # Whitelist the input so eval() cannot run arbitrary code.
-    if not re.fullmatch(r"[0-9+\-*/(). %]+", expression or ""):
-        return "Error: only numbers and + - * / ( ) . % are allowed."
+    if len(expression or "") > 500:  # bound parser CPU/RAM on pathological input
+        return "Error: expression too long."
     try:
-        # Empty builtins + whitelisted chars make this safe for arithmetic only.
-        result = eval(expression, {"__builtins__": {}}, {})  # noqa: S307
-        return str(result)
+        tree = ast.parse(expression or "", mode="eval")
+        return str(_eval_node(tree))
     except Exception as exc:  # noqa: BLE001
         return f"Error: could not evaluate '{expression}' ({exc})"
 
@@ -88,13 +122,59 @@ def position() -> str:
     return json.dumps(info, ensure_ascii=False)
 
 
+def _resolve_public_ip(host: str, port: int) -> str:
+    """Resolve ``host`` and require EVERY address to be globally routable (allowlist),
+    then return one validated IP literal to pin the connection to.
+
+    An allowlist on ``is_global`` is stricter and more robust than a denylist of flags:
+    it also blocks Alibaba metadata (100.100.100.200), RFC6598 CGNAT (100.64.0.0/10),
+    and anything new/unusual a denylist would miss. Raises ValueError if unsafe.
+    """
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    ips = [info[4][0] for info in infos]
+    if not ips:
+        raise ValueError("could not resolve host")
+    for addr in ips:
+        if not ipaddress.ip_address(addr).is_global:
+            raise ValueError("URL resolves to a non-public address (blocked)")
+    return ips[0]
+
+
 @tool
 def http_get(url: str) -> str:
-    """Fetch a URL and return the first 2000 characters of its text body."""
+    """Fetch a PUBLIC http(s) URL and return the first 2000 characters of its text body.
+
+    Internal/loopback/private/metadata/CGNAT addresses are blocked, and the connection
+    is pinned to the validated IP (so a rebinding DNS answer can't swap it at connect time).
+    """
     try:
-        resp = httpx.get(url, timeout=15, follow_redirects=True)
-        resp.raise_for_status()
-        return resp.text[:2000]
+        with httpx.Client(timeout=15, follow_redirects=False) as client:
+            for _ in range(4):  # at most 3 redirects, each re-validated
+                parsed = httpx.URL(url)
+                if parsed.scheme not in ("http", "https"):
+                    return "Error: only http(s) URLs are allowed."
+                host = parsed.host
+                if not host:
+                    return "Error: missing host."
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                try:
+                    ip = _resolve_public_ip(host, port)
+                except ValueError as exc:
+                    return f"Error: {exc}."
+                # Pin to the validated IP literal (httpx won't re-resolve it), while
+                # keeping Host header + TLS SNI = the original hostname for routing/certs.
+                resp = client.get(
+                    parsed.copy_with(host=ip),
+                    headers={"Host": host},
+                    extensions={"sni_hostname": host},
+                )
+                location = resp.headers.get("location")
+                if resp.is_redirect and location:
+                    url = urljoin(str(parsed), location)  # resolve against the real URL
+                    continue
+                resp.raise_for_status()
+                return resp.text[:2000]
+            return "Error: too many redirects."
     except Exception as exc:  # noqa: BLE001
         return f"Error: request to '{url}' failed ({exc})"
 

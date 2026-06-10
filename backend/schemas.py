@@ -7,9 +7,9 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     """Body of POST /chat."""
 
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=32000)
     # Conversation id; lets several chats keep independent histories.
-    session_id: str = Field(default="default")
+    session_id: str = Field(default="default", max_length=128)
 
 
 class ToolInfo(BaseModel):
