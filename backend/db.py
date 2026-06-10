@@ -373,3 +373,122 @@ def delete_rag_source(username: str, title: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# ----- Scheduled tasks (background agent runs) -----
+
+
+def insert_scheduled_task(row: dict) -> dict | None:
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        resp = client.table("scheduled_tasks").insert(row).execute()
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def list_scheduled_tasks(username: str) -> list[dict]:
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        resp = (
+            client.table("scheduled_tasks")
+            .select("*")
+            .eq("username", username)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return resp.data or []
+    except Exception:
+        return []
+
+
+def update_scheduled_task(username: str, task_id: int, fields: dict) -> dict | None:
+    """Update one of the user's tasks (scoped by username — no cross-user edits)."""
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        resp = (
+            client.table("scheduled_tasks")
+            .update(fields)
+            .eq("username", username)
+            .eq("id", task_id)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def delete_scheduled_task(username: str, task_id: int) -> bool:
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("scheduled_tasks").delete().eq("username", username).eq(
+            "id", task_id
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
+def list_due_tasks(limit: int = 25) -> list[dict]:
+    """Enabled tasks whose next_run_at is in the past — across ALL users (the cron
+    endpoint runs these). Bounded by ``limit`` so one invocation can't fan out forever."""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        resp = (
+            client.table("scheduled_tasks")
+            .select("*")
+            .eq("enabled", True)
+            .lte("next_run_at", now)
+            .order("next_run_at")
+            .limit(limit)
+            .execute()
+        )
+        return resp.data or []
+    except Exception:
+        return []
+
+
+def claim_due_task(task_id: int, new_next_run: str, now_iso: str) -> bool:
+    """Atomically claim a due task by advancing next_run_at past now — but ONLY if it's
+    still due (next_run_at <= now). The conditional UPDATE is a row-level compare-and-swap,
+    so of two overlapping run-due ticks exactly one wins the claim (returns True) and the
+    other skips. Advancing BEFORE the run also means a later result-write failure can't
+    make the task re-fire every tick."""
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        resp = (
+            client.table("scheduled_tasks")
+            .update({"next_run_at": new_next_run})
+            .eq("id", task_id)
+            .lte("next_run_at", now_iso)
+            .execute()
+        )
+        return bool(resp.data)
+    except Exception:
+        return False
+
+
+def mark_task_run(task_id: int, fields: dict) -> None:
+    """Record a run's outcome (last_run_at / last_result / last_error)."""
+    client = _get_client()
+    if not client:
+        return
+    try:
+        client.table("scheduled_tasks").update(fields).eq("id", task_id).execute()
+    except Exception:
+        pass

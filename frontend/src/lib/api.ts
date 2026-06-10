@@ -10,6 +10,7 @@ import type {
   Memory,
   ModelInfo,
   RagDocument,
+  ScheduledTask,
   SessionSummary,
   ToolCall,
   ToolInfo,
@@ -347,6 +348,41 @@ export async function deleteRagDocument(title: string): Promise<RagDocument[]> {
   });
   if (!res.ok) throw new Error(`DELETE /rag/documents failed: ${res.status}`);
   return (await res.json()).documents as RagDocument[];
+}
+
+// ----- Scheduled tasks -----
+
+export async function fetchSchedules(): Promise<ScheduledTask[]> {
+  const res = await apiFetch("/scheduled");
+  if (!res.ok) throw new Error(`GET /scheduled failed: ${res.status}`);
+  return (await res.json()).tasks as ScheduledTask[];
+}
+
+export async function createSchedule(body: {
+  name: string;
+  prompt: string;
+  cron: string;
+  enabled?: boolean;
+}): Promise<ScheduledTask[]> {
+  const res = await apiFetch("/scheduled", {
+    method: "POST",
+    headers: JSON_CT,
+    body: JSON.stringify({ enabled: true, ...body }),
+  });
+  if (!res.ok) throw new Error(await detail(res));
+  return (await res.json()).tasks as ScheduledTask[];
+}
+
+export async function toggleSchedule(id: number): Promise<ScheduledTask[]> {
+  const res = await apiFetch(`/scheduled/${id}/toggle`, { method: "POST" });
+  if (!res.ok) throw new Error(`POST /scheduled/toggle failed: ${res.status}`);
+  return (await res.json()).tasks as ScheduledTask[];
+}
+
+export async function deleteSchedule(id: number): Promise<ScheduledTask[]> {
+  const res = await apiFetch(`/scheduled/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`DELETE /scheduled failed: ${res.status}`);
+  return (await res.json()).tasks as ScheduledTask[];
 }
 
 // ----- Auth (public — no token yet) -----

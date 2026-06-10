@@ -36,6 +36,20 @@ export interface SessionSummary {
   updated_at: string;
 }
 
+// A scheduled background agent run (one scheduled_tasks row).
+export interface ScheduledTask {
+  id: number;
+  name: string;
+  prompt: string;
+  cron: string;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_result: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
 export interface ToolInfo {
   name: string;
   description: string;

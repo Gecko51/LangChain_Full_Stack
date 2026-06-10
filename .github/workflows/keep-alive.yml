@@ -30,3 +30,21 @@ jobs:
             200|204) echo "✅ Backend is awake." ;;
             *) echo "⚠️ Backend returned $code (it may be mid-redeploy)." ;;
           esac
+
+      - name: Run due scheduled tasks
+        # The backend is awake now → trigger any due scheduled agent runs. Gated by a
+        # shared secret so only this cron can fire users' tasks. Set the secret in:
+        #   GitHub repo → Settings → Secrets → Actions → SCHEDULER_SECRET
+        #   Render → the backend service env → SCHEDULER_SECRET (same value)
+        env:
+          SCHED_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+        run: |
+          if [ -z "$SCHED_SECRET" ]; then
+            echo "ℹ️ SCHEDULER_SECRET not set — skipping scheduler tick."
+            exit 0
+          fi
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            --max-time 180 --retry 2 --retry-delay 5 --retry-all-errors \
+            -X POST -H "X-Scheduler-Secret: $SCHED_SECRET" \
+            https://agent-playground-api.onrender.com/scheduled/run-due || echo "000")
+          echo "Scheduler tick -> HTTP $code"

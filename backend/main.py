@@ -5,7 +5,10 @@ Public routes: /health and /auth/*. Everything else is behind a JWT login gate
 """
 from __future__ import annotations
 
+import asyncio
+import hmac
 import os
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
@@ -14,14 +17,15 @@ load_dotenv()
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 import httpx  # noqa: E402
-from fastapi import APIRouter, Depends, FastAPI, HTTPException  # noqa: E402
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 from sse_starlette.sse import EventSourceResponse  # noqa: E402
 
 import auth  # noqa: E402
 import db  # noqa: E402
-from agent import fetch_generation_cost, stream_chat  # noqa: E402
+import scheduled  # noqa: E402
+from agent import fetch_generation_cost, run_once, stream_chat  # noqa: E402
 from config import AgentConfig, config_store  # noqa: E402
 from connectors import CONNECTOR_CATALOG  # noqa: E402
 from mcp_manager import discover  # noqa: E402
@@ -378,6 +382,84 @@ def delete_rag_document(title: str, user: str = Depends(auth.require_auth)) -> d
     return {"documents": db.list_rag_sources(user)}
 
 
+# ----- Scheduled tasks (background agent runs) -----
+
+
+def _validate_cron(body: scheduled.ScheduledTaskIn) -> None:
+    if not scheduled.is_valid_cron(body.cron):
+        raise HTTPException(status_code=400, detail="Invalid cron expression.")
+    if not scheduled.interval_ok(body.cron):
+        raise HTTPException(
+            status_code=400, detail="Schedule is too frequent (minimum is hourly)."
+        )
+
+
+@protected.get("/scheduled")
+def list_scheduled(user: str = Depends(auth.require_auth)) -> dict:
+    """The user's scheduled tasks (with their latest run result)."""
+    return {"tasks": db.list_scheduled_tasks(user)}
+
+
+@protected.post("/scheduled")
+def create_scheduled(
+    body: scheduled.ScheduledTaskIn, user: str = Depends(auth.require_auth)
+) -> dict:
+    """Create a scheduled task (validates the cron + per-user cap)."""
+    _validate_cron(body)
+    if len(db.list_scheduled_tasks(user)) >= scheduled.MAX_TASKS_PER_USER:
+        raise HTTPException(
+            status_code=429, detail="Too many scheduled tasks — delete one first."
+        )
+    db.insert_scheduled_task(
+        {
+            "username": user,
+            "name": body.name.strip(),
+            "prompt": body.prompt,
+            "cron": body.cron.strip(),
+            "enabled": body.enabled,
+            "next_run_at": scheduled.next_run(body.cron).isoformat(),
+        }
+    )
+    return {"tasks": db.list_scheduled_tasks(user)}
+
+
+@protected.put("/scheduled/{task_id}")
+def update_scheduled(
+    task_id: int,
+    body: scheduled.ScheduledTaskIn,
+    user: str = Depends(auth.require_auth),
+) -> dict:
+    """Edit a task (re-validates cron + recomputes the next run)."""
+    _validate_cron(body)
+    db.update_scheduled_task(
+        user,
+        task_id,
+        {
+            "name": body.name.strip(),
+            "prompt": body.prompt,
+            "cron": body.cron.strip(),
+            "enabled": body.enabled,
+            "next_run_at": scheduled.next_run(body.cron).isoformat(),
+        },
+    )
+    return {"tasks": db.list_scheduled_tasks(user)}
+
+
+@protected.post("/scheduled/{task_id}/toggle")
+def toggle_scheduled(task_id: int, user: str = Depends(auth.require_auth)) -> dict:
+    """Enable / disable a task without editing it."""
+    cur = next((t for t in db.list_scheduled_tasks(user) if t["id"] == task_id), None)
+    if cur is not None:
+        db.update_scheduled_task(user, task_id, {"enabled": not cur["enabled"]})
+    return {"tasks": db.list_scheduled_tasks(user)}
+
+
+@protected.delete("/scheduled/{task_id}")
+def delete_scheduled(task_id: int, user: str = Depends(auth.require_auth)) -> dict:
+    db.delete_scheduled_task(user, task_id)
+    return {"tasks": db.list_scheduled_tasks(user)}
+
+
 # ----- Chat -----
 
 
@@ -461,6 +543,69 @@ def delete_archive(archive_id: str, user: str = Depends(auth.require_auth)) -> d
     """Delete one of the user's archives."""
     db.delete_archive(user, archive_id)
     return {"archives": db.list_archives(user)}
+
+
+# ----- Scheduler tick (called by the external keep-alive cron, not a logged-in user) -----
+
+# Serialises overlapping ticks (defence in depth on top of the per-task DB claim) and
+# caps how many agent runs execute at once on the small free dyno.
+_scheduler_lock = asyncio.Lock()
+_SCHED_CONCURRENCY = 4
+
+
+async def _run_scheduled_task(task: dict, now_iso: str) -> bool:
+    """Claim a due task (advance next_run_at FIRST, atomically) and, if we won the claim,
+    run it. Returns whether it actually ran (vs already claimed by an overlapping tick)."""
+    try:
+        new_next = scheduled.next_run(task["cron"]).isoformat()
+    except Exception:  # noqa: BLE001
+        db.mark_task_run(task["id"], {"enabled": False, "last_error": "invalid cron"})
+        return False
+    # Atomic compare-and-swap: only one tick advances next_run_at past now → only one runs.
+    if not db.claim_due_task(task["id"], new_next, now_iso):
+        return False
+    now = datetime.now(timezone.utc)
+    fields: dict = {"last_run_at": now.isoformat()}
+    try:
+        cfg = config_store.get(task["username"])
+        s = settings_store.get(task["username"])
+        result = await asyncio.wait_for(
+            run_once(cfg, s, task["prompt"], task["username"]), timeout=120
+        )
+        fields["last_result"] = (result or "")[: scheduled.MAX_RESULT_LEN]
+        fields["last_error"] = None
+    except Exception as exc:  # noqa: BLE001
+        fields["last_error"] = str(exc)[:500]
+    db.mark_task_run(task["id"], fields)  # next_run_at was already advanced by the claim
+    return True
+
+
+@app.post("/scheduled/run-due")
+async def run_due(request: Request) -> dict:
+    """Run every due scheduled task. Gated by a shared secret (the cron sends it) so it
+    can't be triggered by just anyone — running tasks costs the users' API credits."""
+    secret = os.environ.get("SCHEDULER_SECRET")
+    if not secret:
+        raise HTTPException(status_code=503, detail="Scheduler not configured.")
+    provided = request.headers.get("X-Scheduler-Secret", "")
+    if not hmac.compare_digest(provided, secret):
+        raise HTTPException(status_code=401, detail="Bad scheduler secret.")
+    # A second tick that overlaps a still-running one returns immediately (no double-run).
+    if _scheduler_lock.locked():
+        return {"ran": 0, "busy": True}
+    async with _scheduler_lock:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        due = db.list_due_tasks(25)
+        sem = asyncio.Semaphore(_SCHED_CONCURRENCY)
+
+        async def _guarded(t: dict) -> bool:
+            async with sem:
+                return await _run_scheduled_task(t, now_iso)
+
+        results = await asyncio.gather(
+            *[_guarded(t) for t in due], return_exceptions=True
+        )
+        return {"ran": sum(1 for r in results if r is True), "due": len(due)}
 
 
 app.include_router(protected)

@@ -124,6 +124,43 @@ def _event(event: str, data: dict) -> dict:
     return {"event": event, "data": json.dumps(data, ensure_ascii=False)}
 
 
+def _message_text(content) -> str:
+    """Extract plain answer text from an AIMessage content, which may be a string OR a
+    list of blocks (reasoning models / some providers). Joins the text blocks and ignores
+    reasoning blocks — never the raw Python repr of the list."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return str(content)
+
+
+async def run_once(
+    config: AgentConfig, settings: Settings, message: str, username: str
+) -> str:
+    """Run the agent once (no streaming) and return its final answer text. Used by
+    scheduled tasks: it gets the user's tools + long-term memory + RAG, but no chat
+    history (each scheduled run is a fresh one-shot)."""
+    key = _resolve_api_key(settings.openrouter_api_key)
+    tools = await gather_tools(config, settings.mcp_servers, username, key)
+    memories = memory_store.get(username) if config.longterm_memory else []
+    system_prompt = config.system_prompt + memory_preamble(memories)
+    agent = build_agent(
+        config, tools, settings.openrouter_api_key, system_prompt=system_prompt
+    )
+    result = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
+    for m in reversed(result.get("messages", [])):
+        if isinstance(m, AIMessage) and m.content:
+            return _message_text(m.content)
+    return ""
+
+
 async def stream_chat(
     config: AgentConfig,
     settings: Settings,

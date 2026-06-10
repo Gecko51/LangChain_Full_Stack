@@ -5,6 +5,7 @@ import { Loader2, RotateCcw, Save } from "lucide-react";
 import { KnowledgePanel } from "@/components/KnowledgePanel";
 import { MemoriesPanel } from "@/components/MemoriesPanel";
 import { ModelSelector } from "@/components/ModelSelector";
+import { SchedulesPanel } from "@/components/SchedulesPanel";
 import { ToolsPanel } from "@/components/ToolsPanel";
 import {
   Accordion,
@@ -208,6 +209,14 @@ export function AgentConfig() {
               />
             </div>
             {config.rag_enabled ? <KnowledgePanel /> : null}
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* ---- Schedules (background agent runs) ---- */}
+        <AccordionItem value="schedules">
+          <AccordionTrigger>Schedules</AccordionTrigger>
+          <AccordionContent>
+            <SchedulesPanel />
           </AccordionContent>
         </AccordionItem>
 

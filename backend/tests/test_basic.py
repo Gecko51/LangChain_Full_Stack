@@ -210,6 +210,23 @@ def test_rag_search_tool_is_user_scoped_and_fenced():
     assert "\n# SYSTEM" not in out
 
 
+def test_scheduled_cron_helpers():
+    from datetime import datetime, timezone
+
+    import scheduled
+
+    assert scheduled.is_valid_cron("0 9 * * *")
+    assert not scheduled.is_valid_cron("definitely not a cron")
+    assert scheduled.interval_ok("0 9 * * *")  # daily — fine
+    assert scheduled.interval_ok("0 * * * *")  # hourly — exactly the minimum
+    assert not scheduled.interval_ok("*/5 * * * *")  # every 5 min — too frequent
+    # A 'burst' cron (fires 6× at the top of even hours, then idles) must be rejected
+    # regardless of submission time — the min gap across the whole cycle is 5 min.
+    assert not scheduled.interval_ok("0,5,10,15,20,25 0,2,4,6,8,10,12,14 * * *")
+    nxt = scheduled.next_run("0 9 * * *", datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc))
+    assert nxt.hour == 9 and nxt.day == 1
+
+
 def test_auth_secret_fails_closed(monkeypatch):
     """No AUTH_SECRET (and no explicit dev opt-in) must refuse to run, not sign with
     a guessable default — otherwise anyone could forge a token for any username."""
