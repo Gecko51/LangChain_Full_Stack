@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAgentStream } from "@/hooks/useAgentStream";
 import { useChatArchives } from "@/hooks/useChatArchives";
 import { useSettings } from "@/hooks/useSettings";
-import { clearSession } from "@/lib/api";
+import { clearSession, fetchSession } from "@/lib/api";
 import { parseVars } from "@/lib/promptVars";
 import { cn } from "@/lib/utils";
 import type { AgentStatus, ChatMessage, CustomPrompt, ToolCall } from "@/types/agent";
@@ -50,6 +50,28 @@ export function ChatInterface() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
+
+  // Re-hydrate the conversation on load: reloading the page no longer blanks the chat —
+  // the persisted session (with its tool-call bubbles) is restored. Runs once.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    fetchSession(SESSION_ID)
+      .then((msgs) => {
+        if (msgs.length === 0) return;
+        setMessages(
+          msgs.map((m) => ({
+            id: uid(),
+            role: m.role,
+            content: m.content,
+            toolCalls: m.tool_calls,
+            timestamp: Date.now(),
+          })),
+        );
+      })
+      .catch(() => {});
+  }, []);
 
   // ----- Slash-command menu for custom prompts -----
   const slashQuery = input.startsWith("/") ? input.slice(1).toLowerCase() : null;

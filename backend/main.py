@@ -347,6 +347,20 @@ async def chat_cost(generation_id: str, user: str = Depends(auth.require_auth)) 
     return {"cost": cost}
 
 
+@protected.get("/sessions/{session_id}")
+def get_session(session_id: str, user: str = Depends(auth.require_auth)) -> dict:
+    """The session's messages (with tool calls) so the UI can re-hydrate on reload."""
+    out = [
+        {
+            "role": "assistant" if m.get("role") == "ai" else "user",
+            "content": m.get("content", ""),
+            "tool_calls": m.get("tool_calls", []),
+        }
+        for m in session_store.messages_ui(user, session_id)
+    ]
+    return {"messages": out}
+
+
 @protected.delete("/sessions/{session_id}")
 def clear_session(session_id: str, user: str = Depends(auth.require_auth)) -> dict:
     """Clear one of the user's session conversation histories."""

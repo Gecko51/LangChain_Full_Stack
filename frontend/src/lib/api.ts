@@ -9,8 +9,16 @@ import type {
   McpServerStatus,
   Memory,
   ModelInfo,
+  ToolCall,
   ToolInfo,
 } from "@/types/agent";
+
+// One message of a persisted session, as returned by GET /sessions/{id}.
+export interface SessionMessage {
+  role: "user" | "assistant";
+  content: string;
+  tool_calls: ToolCall[];
+}
 
 type ArchiveMessage = { role: string; content: string };
 
@@ -119,6 +127,13 @@ export async function fetchTools(): Promise<ToolInfo[]> {
 
 export async function clearSession(sessionId: string): Promise<void> {
   await apiFetch(`/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+}
+
+// The session's messages (with tool calls) — used to re-hydrate the chat on reload.
+export async function fetchSession(sessionId: string): Promise<SessionMessage[]> {
+  const res = await apiFetch(`/sessions/${encodeURIComponent(sessionId)}`);
+  if (!res.ok) throw new Error(`GET /sessions failed: ${res.status}`);
+  return (await res.json()).messages as SessionMessage[];
 }
 
 // OpenRouter cost (USD) of a generation — fetched lazily when the user opens the

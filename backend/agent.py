@@ -149,6 +149,9 @@ async def stream_chat(
 
     final_parts: list[str] = []
     seen_tool_calls: set[str] = set()
+    # id -> {id, name, input, output}: kept so the turn's tool calls can be persisted
+    # for the UI (a reloaded conversation re-renders its tool bubbles).
+    turn_tool_calls: dict[str, dict] = {}
     usage_md: dict | None = None  # OpenRouter token usage (last LLM call)
     gen_id: str | None = None  # OpenRouter generation id (for the cost lookup)
     persisted = False  # did we already save this turn?
@@ -194,6 +197,11 @@ async def stream_chat(
                             if tc_id in seen_tool_calls:
                                 continue
                             seen_tool_calls.add(tc_id)
+                            turn_tool_calls[tc_id] = {
+                                "id": tc_id,
+                                "name": tc.get("name"),
+                                "input": tc.get("args", {}),
+                            }
                             yield _event(
                                 "tool_start",
                                 {
@@ -203,6 +211,9 @@ async def stream_chat(
                                 },
                             )
                     elif isinstance(msg, ToolMessage):
+                        entry = turn_tool_calls.get(msg.tool_call_id)
+                        if entry is not None:
+                            entry["output"] = str(msg.content)
                         yield _event(
                             "tool_end",
                             {
@@ -213,8 +224,10 @@ async def stream_chat(
                         )
 
         content = "".join(final_parts)
-        # Persist the turn so memory works across requests.
-        session_store.append(username, session_id, user_msg, AIMessage(content=content))
+        # Persist the turn: text drives the agent's replay, tool_calls re-hydrate the UI.
+        session_store.append_turn(
+            username, session_id, message, content, list(turn_tool_calls.values())
+        )
         persisted = True
         # Token usage (cost is fetched lazily by the client via /chat/cost).
         if usage_md:
@@ -239,6 +252,7 @@ async def stream_chat(
         # above), still persist the partial turn so the UI (which keeps the partial
         # bubble) and the agent's memory stay in sync on the next message.
         if not persisted and final_parts:
-            session_store.append(
-                username, session_id, user_msg, AIMessage(content="".join(final_parts))
+            session_store.append_turn(
+                username, session_id, message, "".join(final_parts),
+                list(turn_tool_calls.values()),
             )
