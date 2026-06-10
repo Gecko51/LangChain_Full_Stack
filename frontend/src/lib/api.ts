@@ -236,6 +236,19 @@ export async function toggleMcpServer(name: string): Promise<AppSettings> {
   return res.json();
 }
 
+export async function setMcpAllowedTools(
+  name: string,
+  allowed: string[] | null,
+): Promise<AppSettings> {
+  const res = await apiFetch(`/mcp/servers/${encodeURIComponent(name)}/tools`, {
+    method: "PUT",
+    headers: JSON_CT,
+    body: JSON.stringify({ allowed_tools: allowed }),
+  });
+  if (!res.ok) throw new Error(`PUT /mcp/servers/tools failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchMcpTools(): Promise<McpServerStatus[]> {
   const res = await apiFetch("/mcp/tools");
   if (!res.ok) throw new Error(`GET /mcp/tools failed: ${res.status}`);

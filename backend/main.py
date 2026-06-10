@@ -76,6 +76,10 @@ class ArchiveBody(BaseModel):
     messages: list[dict] = []
 
 
+class AllowedToolsBody(BaseModel):
+    allowed_tools: list[str] | None = None  # None = all tools enabled
+
+
 def _archive_title(messages: list[dict]) -> str:
     """Auto-name an archive from its first user message (the conversation's topic)."""
     for m in messages:
@@ -86,8 +90,24 @@ def _archive_title(messages: list[dict]) -> str:
     return "Conversation"
 
 
+def _public_mcp_server(m: MCPServer) -> dict:
+    """An MCP server, safe to send to the client: credential VALUES are stripped, only
+    the key names are exposed (write-only credential pattern, like the API key hint)."""
+    return {
+        "name": m.name,
+        "transport": m.transport,
+        "command": m.command,
+        "args": m.args,
+        "url": m.url,
+        "enabled": m.enabled,
+        "env_keys": list(m.env.keys()),
+        "header_keys": list(m.headers.keys()),
+        "allowed_tools": m.allowed_tools,
+    }
+
+
 def _public_settings(user: str) -> dict:
-    """A user's settings, safe to expose to the client (never the raw API key)."""
+    """A user's settings, safe to expose to the client (never raw API key / MCP secrets)."""
     s = settings_store.get(user)
     key = s.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY")
     hint = None
@@ -102,7 +122,7 @@ def _public_settings(user: str) -> dict:
             else ("env" if os.environ.get("OPENROUTER_API_KEY") else None)
         ),
         "custom_prompts": [p.model_dump() for p in s.custom_prompts],
-        "mcp_servers": [m.model_dump() for m in s.mcp_servers],
+        "mcp_servers": [_public_mcp_server(m) for m in s.mcp_servers],
     }
 
 
@@ -244,6 +264,16 @@ def delete_mcp_server(name: str, user: str = Depends(auth.require_auth)) -> dict
 @protected.post("/mcp/servers/{name}/toggle")
 def toggle_mcp_server(name: str, user: str = Depends(auth.require_auth)) -> dict:
     settings_store.toggle_mcp_server(user, name)
+    return _public_settings(user)
+
+
+@protected.put("/mcp/servers/{name}/tools")
+def set_mcp_allowed_tools(
+    name: str, body: AllowedToolsBody, user: str = Depends(auth.require_auth)
+) -> dict:
+    """Set a server's per-tool allowlist (namespaced names; None = all enabled).
+    Credentials are untouched (write-only)."""
+    settings_store.set_allowed_tools(user, name, body.allowed_tools)
     return _public_settings(user)
 
 

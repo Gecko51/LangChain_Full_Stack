@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Maximize2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { KeyRound, Loader2, Maximize2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -49,6 +49,14 @@ function asArgs(v: unknown): string[] {
 function asStr(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
+function asRecord(v: unknown): Record<string, string> {
+  if (!v || typeof v !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof val === "string") out[k] = val;
+  }
+  return out;
+}
 
 function normalizeServer(name: string, raw: unknown): MCPServer | null {
   if (!raw || typeof raw !== "object") return null;
@@ -58,7 +66,9 @@ function normalizeServer(name: string, raw: unknown): MCPServer | null {
   const rawT = String(cfg.transport ?? cfg.type ?? "").toLowerCase();
   let transport: McpTransport;
   if (command) transport = "stdio";
-  else if (url) transport = rawT === "sse" || url.includes("sse") ? "sse" : "http";
+  // Only classify as SSE on an explicit hint or a /sse endpoint — not any URL that
+  // merely contains the substring "sse" (e.g. ".../assets/...").
+  else if (url) transport = rawT === "sse" || url.endsWith("/sse") ? "sse" : "http";
   else transport = rawT === "sse" ? "sse" : rawT.includes("http") ? "http" : "stdio";
   return {
     name,
@@ -67,6 +77,9 @@ function normalizeServer(name: string, raw: unknown): MCPServer | null {
     args: asArgs(cfg.args),
     url,
     enabled: cfg.enabled !== false && cfg.disabled !== true,
+    // Keep credentials from pasted configs (was silently dropped before).
+    env: asRecord(cfg.env),
+    headers: asRecord(cfg.headers),
   };
 }
 
@@ -103,6 +116,8 @@ export function MCPPanel() {
   const [command, setCommand] = useState("npx");
   const [argsText, setArgsText] = useState("");
   const [url, setUrl] = useState("");
+  // Credential rows: env vars (stdio) or headers (sse/http). Values are write-only.
+  const [credRows, setCredRows] = useState<{ key: string; value: string }[]>([]);
   const [adding, setAdding] = useState(false);
 
   // JSON-import state.
@@ -145,6 +160,9 @@ export function MCPPanel() {
       .split("\n")
       .map((a) => a.trim())
       .filter(Boolean);
+    const creds = Object.fromEntries(
+      credRows.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value]),
+    );
     setAdding(true);
     try {
       await addMcpServer({
@@ -154,10 +172,13 @@ export function MCPPanel() {
         args: transport === "stdio" ? args : [],
         url: transport === "stdio" ? null : url.trim(),
         enabled: true,
+        env: transport === "stdio" ? creds : {},
+        headers: transport === "stdio" ? {} : creds,
       });
       setName("");
       setArgsText("");
       setUrl("");
+      setCredRows([]);
       toast.success(`Added MCP server "${cleanName}"`);
       refreshTools();
     } catch (e) {
@@ -235,6 +256,20 @@ export function MCPPanel() {
                         ? `${s.command ?? ""} ${(s.args ?? []).join(" ")}`
                         : s.url}
                     </p>
+                    {(s.env_keys?.length ?? 0) + (s.header_keys?.length ?? 0) > 0 ? (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {[...(s.env_keys ?? []), ...(s.header_keys ?? [])].map((k) => (
+                          <Badge
+                            key={k}
+                            variant="outline"
+                            className="gap-1 text-[10px] font-normal"
+                          >
+                            <KeyRound className="size-2.5" />
+                            {k}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <Switch checked={s.enabled} onCheckedChange={() => onToggle(s.name)} />
                   <Button
@@ -370,6 +405,58 @@ export function MCPPanel() {
                 className="font-mono text-xs"
               />
             )}
+
+            {/* Credentials: env vars (stdio) or request headers (sse/http). Needed for
+                Notion, Airtable, Slack, HubSpot… Values are write-only (never returned). */}
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground text-[11px]">
+                {transport === "stdio" ? "Environment variables" : "Headers"} (for API keys)
+              </Label>
+              {credRows.map((row, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <Input
+                    placeholder={transport === "stdio" ? "NOTION_TOKEN" : "Authorization"}
+                    value={row.key}
+                    onChange={(e) =>
+                      setCredRows((rows) =>
+                        rows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)),
+                      )
+                    }
+                    className="font-mono text-xs"
+                  />
+                  <Input
+                    type="password"
+                    placeholder="value"
+                    value={row.value}
+                    onChange={(e) =>
+                      setCredRows((rows) =>
+                        rows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)),
+                      )
+                    }
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-9 shrink-0"
+                    onClick={() => setCredRows((rows) => rows.filter((_, j) => j !== i))}
+                    aria-label="Remove"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setCredRows((rows) => [...rows, { key: "", value: "" }])}
+              >
+                <Plus className="size-3" />
+                Add {transport === "stdio" ? "variable" : "header"}
+              </Button>
+            </div>
+
             <Button onClick={onAdd} disabled={adding || !name.trim()}>
               {adding ? (
                 <Loader2 className="size-4 animate-spin" />

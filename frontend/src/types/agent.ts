@@ -82,6 +82,13 @@ export interface MCPServer {
   args?: string[]; // stdio
   url?: string | null; // sse / http
   enabled: boolean;
+  // Credentials — write-only. We SEND env/headers (real values) when adding a server;
+  // the server never returns the values, only the key names (env_keys/header_keys).
+  env?: Record<string, string>; // stdio: env vars (e.g. NOTION_TOKEN)
+  headers?: Record<string, string>; // sse/http: request headers (e.g. Authorization)
+  env_keys?: string[]; // read-only: which env keys are set
+  header_keys?: string[]; // read-only: which header keys are set
+  allowed_tools?: string[] | null; // per-tool allowlist (namespaced); null = all
 }
 
 // Discovery result from GET /mcp/tools (one entry per server).

@@ -72,6 +72,52 @@ def test_list_tools_flags_enabled():
     assert by_name["calculator"]["enabled"] is False
 
 
+def test_mcp_tool_namespacing():
+    import mcp_manager
+
+    assert mcp_manager._namespace("gmail", "search") == "gmail__search"
+    # Hyphens/invalid chars in the server name are sanitised to underscores.
+    assert mcp_manager._namespace("my-server", "list_files") == "my_server__list_files"
+
+
+def test_mcp_credentials_never_leak_to_client():
+    import main
+    from settings import MCPServer
+
+    m = MCPServer(
+        name="notion",
+        transport="http",
+        url="https://mcp.notion.com/mcp",
+        headers={"Authorization": "super-secret-token"},
+    )
+    pub = main._public_mcp_server(m)
+    # The secret value is never present anywhere in the public payload.
+    assert "super-secret-token" not in repr(pub)
+    assert pub["header_keys"] == ["Authorization"]
+    assert "headers" not in pub and "env" not in pub
+
+
+def test_mcp_upsert_is_credential_merge_safe(tmp_path, monkeypatch):
+    import settings as settings_module
+    from settings import MCPServer, SettingsStore
+
+    monkeypatch.setattr(settings_module, "SETTINGS_FILE", tmp_path / "settings.json")
+    store = SettingsStore()
+    store.upsert_mcp_server(
+        "u",
+        MCPServer(name="s", transport="http", url="https://x",
+                  headers={"Authorization": "real-secret"}),
+    )
+    # Re-upsert with a BLANK value (as the masked client would on a permissions edit):
+    # the stored secret must be preserved, not wiped.
+    store.upsert_mcp_server(
+        "u",
+        MCPServer(name="s", transport="http", url="https://x",
+                  headers={"Authorization": ""}),
+    )
+    assert store.get("u").mcp_servers[0].headers["Authorization"] == "real-secret"
+
+
 def test_auth_secret_fails_closed(monkeypatch):
     """No AUTH_SECRET (and no explicit dev opt-in) must refuse to run, not sign with
     a guessable default — otherwise anyone could forge a token for any username."""
