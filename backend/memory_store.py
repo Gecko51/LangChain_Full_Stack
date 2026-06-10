@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import db
+import jsonstore
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +30,6 @@ _TABLE = "agent_memories"
 
 _MAX_MEMORIES = 200  # hard cap per user (oldest dropped) — bounds storage
 _MAX_LEN = 500  # cap a single memory's length
-
-# Guards the shared local-JSON file: the /memories routes and the `remember` tool run on
-# different threadpool threads, so the read-modify-write must not interleave.
-_FILE_LOCK = threading.Lock()
 
 # Delimiter the recalled facts are wrapped in; stripped from content so it can't be forged.
 _OPEN, _CLOSE = "<saved_facts>", "</saved_facts>"
@@ -71,18 +67,8 @@ class MemoryStore:
         return {}
 
     def _save_local(self, username: str, items: list[dict]) -> bool:
-        """Atomic, locked read-modify-write of the shared file: serialize writers (no
-        cross-user clobber) and swap via a temp file (no half-written / corrupt JSON)."""
-        try:
-            with _FILE_LOCK:
-                allmem = self._load_local_all()
-                allmem[username] = items
-                tmp = MEMORIES_FILE.parent / (MEMORIES_FILE.name + ".tmp")
-                tmp.write_text(json.dumps(allmem, indent=2), encoding="utf-8")
-                os.replace(tmp, MEMORIES_FILE)  # atomic swap
-            return True
-        except Exception:
-            return False
+        """Atomic, locked write of this user's memories (see jsonstore)."""
+        return jsonstore.update_json(MEMORIES_FILE, lambda d: d.__setitem__(username, items))
 
     def _load(self, username: str) -> list[dict]:
         # 1) Supabase, 2) local JSON, 3) empty.

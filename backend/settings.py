@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 import db
+import jsonstore
 
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 
@@ -72,12 +73,10 @@ class SettingsStore:
         return {}
 
     def _save_local(self, username: str, settings: Settings) -> None:
-        try:
-            allset = self._load_local_all()
-            allset[username] = settings.model_dump()
-            SETTINGS_FILE.write_text(json.dumps(allset, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+        # Atomic, locked write so concurrent savers can't clobber the shared file.
+        jsonstore.update_json(
+            SETTINGS_FILE, lambda d: d.__setitem__(username, settings.model_dump())
+        )
 
     def _load(self, username: str) -> Settings:
         # 1) Supabase, 2) local JSON, 3) empty defaults.

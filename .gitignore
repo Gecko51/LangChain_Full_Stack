@@ -33,7 +33,7 @@ backend/config.json
 backend/settings.json
 backend/auth_users.json
 backend/memories.json
-backend/memories.json.tmp
+backend/*.json.tmp
 
 # ===== Editors / OS =====
 .vscode/

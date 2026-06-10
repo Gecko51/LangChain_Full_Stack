@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 import db
+import jsonstore
 
 # Local backup file (git-ignored).
 CONFIG_FILE = Path(__file__).parent / "config.json"
@@ -82,12 +83,10 @@ class ConfigStore:
         return {}
 
     def _save_local(self, username: str, config: AgentConfig) -> None:
-        try:
-            allcfg = self._load_local_all()
-            allcfg[username] = config.model_dump()
-            CONFIG_FILE.write_text(json.dumps(allcfg, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+        # Atomic, locked write so concurrent savers can't clobber the shared file.
+        jsonstore.update_json(
+            CONFIG_FILE, lambda d: d.__setitem__(username, config.model_dump())
+        )
 
     def _load(self, username: str) -> AgentConfig:
         # 1) Supabase, 2) local JSON, 3) defaults.

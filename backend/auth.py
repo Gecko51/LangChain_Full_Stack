@@ -18,6 +18,7 @@ import jwt
 from fastapi import Header, HTTPException
 
 import db
+import jsonstore
 
 USERS_FILE = Path(__file__).parent / "auth_users.json"
 _DEV_DEFAULT = "dev-insecure-secret-change-me"
@@ -81,20 +82,14 @@ def _load_local() -> dict[str, str]:
     return {}
 
 
-def _save_local(users: dict[str, str]) -> None:
-    try:
-        USERS_FILE.write_text(json.dumps(users, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-
-
 def _get_hash(username: str) -> str | None:
     """Password hash for a username — Supabase first, local mirror as fallback."""
     remote = db.get_user(username)
     if remote:
-        users = _load_local()
-        users[username] = remote["password_hash"]
-        _save_local(users)
+        # Atomic, locked backfill into the local mirror (see jsonstore).
+        jsonstore.update_json(
+            USERS_FILE, lambda d: d.__setitem__(username, remote["password_hash"])
+        )
         return remote["password_hash"]
     return _load_local().get(username)
 
@@ -120,9 +115,8 @@ def register(username: str, password: str) -> str:
         raise ValueError("Username already taken")
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     db.insert_user(username, pw_hash)  # best-effort to Supabase
-    users = _load_local()
-    users[username] = pw_hash
-    _save_local(users)
+    # Atomic, locked write to the local mirror.
+    jsonstore.update_json(USERS_FILE, lambda d: d.__setitem__(username, pw_hash))
     return _make_token(username)
 
 

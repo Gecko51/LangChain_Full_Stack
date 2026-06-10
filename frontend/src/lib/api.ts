@@ -2,7 +2,6 @@
 import type {
   AgentConfig,
   AppSettings,
-  ChatArchive,
   Connector,
   CustomPrompt,
   MCPServer,
@@ -22,8 +21,6 @@ export interface SessionMessage {
   content: string;
   tool_calls: ToolCall[];
 }
-
-type ArchiveMessage = { role: string; content: string };
 
 // Public backend URL (set at build/deploy time). Defaults to local dev.
 // Override at build time with NEXT_PUBLIC_BACKEND_URL. The fallback is the deployed
@@ -155,42 +152,6 @@ export async function fetchGenerationCost(
   if (!res.ok) return null;
   const data = await res.json();
   return (data.cost ?? null) as number | null;
-}
-
-// ----- Chat archives (saved past conversations) -----
-
-export async function fetchArchives(): Promise<ChatArchive[]> {
-  const res = await apiFetch("/archives");
-  if (!res.ok) throw new Error(`GET /archives failed: ${res.status}`);
-  return (await res.json()).archives as ChatArchive[];
-}
-
-export async function createArchive(
-  messages: ArchiveMessage[],
-): Promise<ChatArchive[]> {
-  const res = await apiFetch("/archives", {
-    method: "POST",
-    headers: JSON_CT,
-    body: JSON.stringify({ messages }),
-  });
-  if (!res.ok) throw new Error(`POST /archives failed: ${res.status}`);
-  return (await res.json()).archives as ChatArchive[];
-}
-
-export async function restoreArchive(id: string): Promise<ArchiveMessage[]> {
-  const res = await apiFetch(`/archives/${encodeURIComponent(id)}/restore`, {
-    method: "POST",
-  });
-  if (!res.ok) throw new Error(`restore /archives failed: ${res.status}`);
-  return (await res.json()).messages as ArchiveMessage[];
-}
-
-export async function deleteArchive(id: string): Promise<ChatArchive[]> {
-  const res = await apiFetch(`/archives/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) throw new Error(`DELETE /archives failed: ${res.status}`);
-  return (await res.json()).archives as ChatArchive[];
 }
 
 // ----- Settings -----
