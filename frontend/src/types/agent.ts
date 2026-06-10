@@ -29,6 +29,13 @@ export interface Memory {
   created_at: string;
 }
 
+// A conversation in the sidebar (one chat_sessions row).
+export interface SessionSummary {
+  session_id: string;
+  title: string | null;
+  updated_at: string;
+}
+
 export interface ToolInfo {
   name: string;
   description: string;

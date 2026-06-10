@@ -400,6 +400,12 @@ async def chat_cost(generation_id: str, user: str = Depends(auth.require_auth)) 
     return {"cost": cost}
 
 
+@protected.get("/sessions")
+def get_sessions(user: str = Depends(auth.require_auth)) -> dict:
+    """The user's conversations (session_id, title, updated_at) for the sidebar."""
+    return {"sessions": db.list_sessions(user)}
+
+
 @protected.get("/sessions/{session_id}")
 def get_session(session_id: str, user: str = Depends(auth.require_auth)) -> dict:
     """The session's messages (with tool calls) so the UI can re-hydrate on reload."""

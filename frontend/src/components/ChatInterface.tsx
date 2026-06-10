@@ -1,24 +1,29 @@
 "use client";
 
-import { Eraser, MessageSquarePlus, Send, Square, X } from "lucide-react";
+import {
+  Eraser,
+  MessageSquarePlus,
+  MessagesSquare,
+  Send,
+  Square,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ConversationsSidebar } from "@/components/ConversationsSidebar";
 import { MessageBubble } from "@/components/MessageBubble";
 import { PromptVariablesDialog } from "@/components/PromptVariablesDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAgentStream } from "@/hooks/useAgentStream";
-import { useChatArchives } from "@/hooks/useChatArchives";
 import { useSettings } from "@/hooks/useSettings";
 import { clearSession, fetchSession } from "@/lib/api";
 import { parseVars } from "@/lib/promptVars";
 import { cn } from "@/lib/utils";
 import type { AgentStatus, ChatMessage, CustomPrompt, ToolCall } from "@/types/agent";
 
-const SESSION_ID = "default";
-
-// Small random id for messages (no crypto needed here).
+// Small random id for messages / new conversation ids (no crypto needed here).
 function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -33,7 +38,16 @@ const STATUS_META: Record<AgentStatus, { label: string; className: string }> = {
 export function ChatInterface() {
   const { settings } = useSettings();
   const prompts = settings.custom_prompts;
-  const { archiveConversation, restoreTarget, consumeRestore } = useChatArchives();
+
+  // The open conversation. Persisted to localStorage so a reload restores the same one.
+  const [activeSessionId, setActiveSessionId] = useState<string>(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("agentpg_session") || "default"
+      : "default",
+  );
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Bumped after a turn so the sidebar refetches (new conversation / updated title).
+  const [sessionsRefresh, setSessionsRefresh] = useState(0);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -51,15 +65,17 @@ export function ChatInterface() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
-  // Re-hydrate the conversation on load: reloading the page no longer blanks the chat —
-  // the persisted session (with its tool-call bubbles) is restored. Runs once.
-  const hydratedRef = useRef(false);
+  // Re-hydrate whenever the active conversation changes (and on first load): the chat is
+  // restored from the persisted session, tool-call bubbles included. Sending a message
+  // does NOT re-fetch (hydratedRef already matches), it just appends.
+  const hydratedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (hydratedRef.current) return;
-    hydratedRef.current = true;
-    fetchSession(SESSION_ID)
-      .then((msgs) => {
-        if (msgs.length === 0) return;
+    if (typeof window !== "undefined")
+      localStorage.setItem("agentpg_session", activeSessionId);
+    if (hydratedRef.current === activeSessionId) return;
+    hydratedRef.current = activeSessionId;
+    fetchSession(activeSessionId)
+      .then((msgs) =>
         setMessages(
           msgs.map((m) => ({
             id: uid(),
@@ -68,10 +84,10 @@ export function ChatInterface() {
             toolCalls: m.tool_calls,
             timestamp: Date.now(),
           })),
-        );
-      })
+        ),
+      )
       .catch(() => {});
-  }, []);
+  }, [activeSessionId]);
 
   // ----- Slash-command menu for custom prompts -----
   const slashQuery = input.startsWith("/") ? input.slice(1).toLowerCase() : null;
@@ -124,6 +140,8 @@ export function ChatInterface() {
       patchAssistant((m) => ({ ...m, content: content || m.content, streaming: false }));
       assistantIdRef.current = null;
       setStatus("idle");
+      // The session was just persisted (title / updated_at) — refresh the sidebar list.
+      setSessionsRefresh((n) => n + 1);
     },
     onError: (err) => {
       patchAssistant((m) => ({
@@ -167,8 +185,8 @@ export function ChatInterface() {
     setInput("");
     setActivePrompt(null);
     setStatus("thinking");
-    void send(sentText, SESSION_ID);
-  }, [input, activePrompt, isStreaming, send]);
+    void send(sentText, activeSessionId);
+  }, [input, activePrompt, isStreaming, send, activeSessionId]);
 
   // Stop streaming: abort the request AND finalize the in-flight bubble + status.
   // (cancel() alone leaves the bubble showing "streaming" and the badge on "Streaming"
@@ -186,40 +204,35 @@ export function ChatInterface() {
     setStatus("idle");
     assistantIdRef.current = null;
     try {
-      await clearSession(SESSION_ID);
+      await clearSession(activeSessionId);
     } catch {
       // ignore — clearing the local state is what matters for the user
     }
-  }, [cancel]);
+    setSessionsRefresh((n) => n + 1);
+  }, [cancel, activeSessionId]);
 
-  // Archive the current conversation (auto-named) and start a fresh one.
-  const handleNewChat = useCallback(async () => {
-    if (messages.length > 0) {
-      await archiveConversation(
-        messages
-          .filter((m) => m.content.trim())
-          .map((m) => ({ role: m.role, content: m.content })),
-      );
-    }
-    await handleClear();
-  }, [messages, archiveConversation, handleClear]);
-
-  // Load a restored archive into the chat view (the backend reseeded the live session).
-  useEffect(() => {
-    if (!restoreTarget) return;
+  // Start a brand-new conversation (its own session id); the old one stays in the sidebar.
+  const handleNewChat = useCallback(() => {
     cancel();
-    setMessages(
-      restoreTarget.map((m) => ({
-        id: uid(),
-        role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
-        content: m.content,
-        timestamp: Date.now(),
-      })),
-    );
+    const id = uid();
+    hydratedRef.current = id; // new + empty → skip the hydration fetch
+    setMessages([]);
     setStatus("idle");
     assistantIdRef.current = null;
-    consumeRestore();
-  }, [restoreTarget, consumeRestore, cancel]);
+    setActiveSessionId(id);
+  }, [cancel]);
+
+  // Switch to an existing conversation (the hydration effect loads its messages).
+  const switchSession = useCallback(
+    (id: string) => {
+      if (id === activeSessionId) return;
+      cancel();
+      setStatus("idle");
+      assistantIdRef.current = null;
+      setActiveSessionId(id);
+    },
+    [activeSessionId, cancel],
+  );
 
   const statusMeta = STATUS_META[status];
 
@@ -227,9 +240,19 @@ export function ChatInterface() {
     // h-full comes from the parent grid row (definite height); the three sections
     // below are: fixed header, scrollable messages (min-h-0!), fixed input.
     <div className="flex h-full flex-col">
-      {/* ---- Header: status + clear (fixed) ---- */}
+      {/* ---- Header: conversations + status + new/clear (fixed) ---- */}
       <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Conversations"
+            title="Conversations"
+          >
+            <MessagesSquare className="size-4" />
+          </Button>
           <span className="text-sm font-medium">Chat</span>
           <Badge className={cn("border-0 text-[10px]", statusMeta.className)}>
             {statusMeta.label}
@@ -241,7 +264,7 @@ export function ChatInterface() {
             size="sm"
             onClick={handleNewChat}
             disabled={messages.length === 0}
-            title="Archive this conversation and start a new one"
+            title="Start a new conversation"
           >
             <MessageSquarePlus className="size-3" />
             New chat
@@ -363,6 +386,16 @@ export function ChatInterface() {
           inputRef.current?.focus();
         }}
         onCancel={() => setVarPrompt(null)}
+      />
+
+      {/* Slide-out list of conversations (switch / new / delete). */}
+      <ConversationsSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        activeId={activeSessionId}
+        onSelect={switchSession}
+        onNew={handleNewChat}
+        refreshKey={sessionsRefresh}
       />
     </div>
   );

@@ -10,6 +10,7 @@ Per-user schema: ``agent_config`` / ``app_settings`` keep one JSONB row per user
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
 _client = None
 _init_done = False
@@ -103,18 +104,54 @@ def load_session(username: str, session_id: str) -> list | None:
         return None
 
 
+def _session_title(messages: list) -> str:
+    """Derive a conversation title from its first user message (stable across saves)."""
+    for m in messages:
+        if (
+            isinstance(m, dict)
+            and m.get("role") in ("human", "user")
+            and str(m.get("content", "")).strip()
+        ):
+            return str(m["content"]).strip()[:60]
+    return "New conversation"
+
+
 def save_session(username: str, session_id: str, messages: list) -> bool:
     client = _get_client()
     if not client:
         return False
     try:
         client.table("chat_sessions").upsert(
-            {"username": username, "session_id": session_id, "messages": messages},
+            {
+                "username": username,
+                "session_id": session_id,
+                "messages": messages,
+                "title": _session_title(messages),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
             on_conflict="username,session_id",
         ).execute()
         return True
     except Exception:
         return False
+
+
+def list_sessions(username: str) -> list[dict]:
+    """A user's conversations (session_id, title, updated_at), most recent first."""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        resp = (
+            client.table("chat_sessions")
+            .select("session_id,title,updated_at")
+            .eq("username", username)
+            .order("updated_at", desc=True)
+            .execute()
+        )
+        return resp.data or []
+    except Exception:
+        return []
 
 
 def delete_session(username: str, session_id: str) -> bool:

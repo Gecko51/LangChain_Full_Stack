@@ -10,6 +10,7 @@ import type {
   Memory,
   ModelInfo,
   RagDocument,
+  SessionSummary,
   ToolCall,
   ToolInfo,
 } from "@/types/agent";
@@ -128,6 +129,13 @@ export async function fetchTools(): Promise<ToolInfo[]> {
 
 export async function clearSession(sessionId: string): Promise<void> {
   await apiFetch(`/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+}
+
+// The user's conversations (for the sidebar), most recent first.
+export async function fetchSessions(): Promise<SessionSummary[]> {
+  const res = await apiFetch("/sessions");
+  if (!res.ok) throw new Error(`GET /sessions failed: ${res.status}`);
+  return (await res.json()).sessions as SessionSummary[];
 }
 
 // The session's messages (with tool calls) — used to re-hydrate the chat on reload.
