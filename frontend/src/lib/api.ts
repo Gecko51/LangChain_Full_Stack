@@ -9,6 +9,7 @@ import type {
   McpServerStatus,
   Memory,
   ModelInfo,
+  RagDocument,
   ToolCall,
   ToolInfo,
 } from "@/types/agent";
@@ -308,6 +309,36 @@ export async function clearMemories(): Promise<Memory[]> {
   const res = await apiFetch("/memories", { method: "DELETE" });
   if (!res.ok) throw new Error(`DELETE /memories failed: ${res.status}`);
   return (await res.json()).memories as Memory[];
+}
+
+// ----- RAG knowledge base -----
+
+export async function fetchRagDocuments(): Promise<RagDocument[]> {
+  const res = await apiFetch("/rag/documents");
+  if (!res.ok) throw new Error(`GET /rag/documents failed: ${res.status}`);
+  return (await res.json()).documents as RagDocument[];
+}
+
+export async function addRagDocument(
+  title: string,
+  content: string,
+): Promise<RagDocument[]> {
+  const res = await apiFetch("/rag/documents", {
+    method: "POST",
+    headers: JSON_CT,
+    body: JSON.stringify({ title, content }),
+  });
+  if (!res.ok) throw new Error(await detail(res));
+  return (await res.json()).documents as RagDocument[];
+}
+
+export async function deleteRagDocument(title: string): Promise<RagDocument[]> {
+  // Title goes in a query param (not the path) so slashes/special chars survive routing.
+  const res = await apiFetch(`/rag/documents?title=${encodeURIComponent(title)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`DELETE /rag/documents failed: ${res.status}`);
+  return (await res.json()).documents as RagDocument[];
 }
 
 // ----- Auth (public — no token yet) -----

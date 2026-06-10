@@ -2,6 +2,7 @@
 
 import { Loader2, RotateCcw, Save, Trash2 } from "lucide-react";
 
+import { KnowledgePanel } from "@/components/KnowledgePanel";
 import { MemoriesPanel } from "@/components/MemoriesPanel";
 import { ModelSelector } from "@/components/ModelSelector";
 import { ToolsPanel } from "@/components/ToolsPanel";
@@ -238,6 +239,26 @@ export function AgentConfig() {
               />
             </div>
             {config.longterm_memory ? <MemoriesPanel /> : null}
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* ---- Knowledge (RAG over the user's uploaded documents) ---- */}
+        <AccordionItem value="knowledge">
+          <AccordionTrigger>Knowledge</AccordionTrigger>
+          <AccordionContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Knowledge base (RAG)</Label>
+                <p className="text-muted-foreground text-[11px]">
+                  Let the agent search your documents
+                </p>
+              </div>
+              <Switch
+                checked={config.rag_enabled}
+                onCheckedChange={(v) => setConfig({ rag_enabled: v })}
+              />
+            </div>
+            {config.rag_enabled ? <KnowledgePanel /> : null}
           </AccordionContent>
         </AccordionItem>
 

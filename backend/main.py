@@ -25,6 +25,7 @@ from agent import fetch_generation_cost, stream_chat  # noqa: E402
 from config import AgentConfig, config_store  # noqa: E402
 from connectors import CONNECTOR_CATALOG  # noqa: E402
 from mcp_manager import discover  # noqa: E402
+import rag  # noqa: E402
 from memory_store import memory_store  # noqa: E402
 from schemas import ChatRequest  # noqa: E402
 from sessions import session_store  # noqa: E402
@@ -84,6 +85,11 @@ class AllowedToolsBody(BaseModel):
 
 class MemoryBody(BaseModel):
     content: str = Field(min_length=1, max_length=500)
+
+
+class RagBody(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=100_000)
 
 
 def _archive_title(messages: list[dict]) -> str:
@@ -323,6 +329,53 @@ def clear_memories(user: str = Depends(auth.require_auth)) -> dict:
     """Forget all of the user's memories."""
     memory_store.clear(user)
     return {"memories": []}
+
+
+# ----- RAG knowledge base (semantic search over the user's documents) -----
+
+
+@protected.get("/rag/documents")
+def list_rag_documents(user: str = Depends(auth.require_auth)) -> dict:
+    """The user's uploaded documents (title + chunk count)."""
+    return {"documents": db.list_rag_sources(user)}
+
+
+@protected.post("/rag/documents")
+def add_rag_document(body: RagBody, user: str = Depends(auth.require_auth)) -> dict:
+    """Chunk + embed + store a document so the agent can search it."""
+    s = settings_store.get(user)
+    key = s.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY")
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail="No OpenRouter API key configured (needed to embed documents).",
+        )
+    # Per-user cap: bound embedding spend + DB growth (registration is open). A re-upload
+    # of an existing title is a replace, so it doesn't count against the new-doc budget.
+    title = body.title.strip()
+    docs = db.list_rag_sources(user)
+    is_replace = any(d["title"] == title for d in docs)
+    total_chunks = sum(d["chunks"] for d in docs)
+    if not is_replace and (
+        len(docs) >= rag.MAX_DOCS or total_chunks >= rag.MAX_TOTAL_CHUNKS
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Knowledge base is full — delete some documents before adding more.",
+        )
+    try:
+        chunks = rag.ingest(user, title, body.content, key)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Could not add document: {exc}")
+    return {"chunks": chunks, "documents": db.list_rag_sources(user)}
+
+
+@protected.delete("/rag/documents")
+def delete_rag_document(title: str, user: str = Depends(auth.require_auth)) -> dict:
+    """Delete a document (all its chunks) by title. Title is a query param so it can
+    safely contain slashes / special characters (a path param can't)."""
+    db.delete_rag_source(user, title)
+    return {"documents": db.list_rag_sources(user)}
 
 
 # ----- Chat -----

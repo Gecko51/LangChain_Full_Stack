@@ -27,12 +27,13 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import BaseTool
 
+import rag
 from config import AgentConfig
 from mcp_manager import get_mcp_tools
 from memory_store import memory_preamble, memory_store
 from sessions import session_store
 from settings import Settings
-from tools import get_enabled_tools, make_memory_tools
+from tools import get_enabled_tools, make_memory_tools, make_rag_tools
 
 # The API key from the environment (.env), captured once at import. The UI can
 # override it via settings; that takes precedence when present.
@@ -70,14 +71,20 @@ async def fetch_generation_cost(generation_id: str, user_key: str | None) -> flo
 
 
 async def gather_tools(
-    config: AgentConfig, mcp_servers: list, username: str
+    config: AgentConfig, mcp_servers: list, username: str, api_key: str | None
 ) -> list[BaseTool]:
-    """Enabled built-in tools + the user's `remember` tool (when long-term memory is on)
-    + tools from the user's enabled MCP servers."""
+    """Enabled built-in tools + the user's `remember` tool (long-term memory) +
+    `search_knowledge_base` (RAG, when a key is available) + enabled MCP server tools."""
     builtin = get_enabled_tools(config.tools_enabled)
     memory = make_memory_tools(username, memory_store) if config.longterm_memory else []
+    # RAG needs the key to embed the query; skip the tool if no key is configured.
+    rag_tools = (
+        make_rag_tools(username, api_key, rag.search)
+        if config.rag_enabled and api_key
+        else []
+    )
     mcp = await get_mcp_tools(mcp_servers)
-    return [*builtin, *memory, *mcp]
+    return [*builtin, *memory, *rag_tools, *mcp]
 
 
 def build_agent(
@@ -126,7 +133,8 @@ async def stream_chat(
 ) -> AsyncIterator[dict]:
     """Yield SSE events for one chat turn: token / tool_start / tool_end / done / error."""
     try:
-        tools = await gather_tools(config, settings.mcp_servers, username)
+        key = _resolve_api_key(settings.openrouter_api_key)
+        tools = await gather_tools(config, settings.mcp_servers, username, key)
         # Long-term memory: prepend saved facts to the system prompt so the agent
         # "knows" them automatically (bounded by a char budget for flat cost).
         memories = memory_store.get(username) if config.longterm_memory else []

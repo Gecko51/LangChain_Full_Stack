@@ -34,6 +34,8 @@ class AgentConfig(BaseModel):
     # Long-term memory: inject saved facts into the prompt + give the agent a `remember`
     # tool. Distinct from `memory_enabled` (the short-term conversation window).
     longterm_memory: bool = True
+    # RAG: give the agent a `search_knowledge_base` tool over the user's uploaded docs.
+    rag_enabled: bool = True
     streaming: bool = True
 
 
@@ -51,6 +53,7 @@ DEFAULT_CONFIG = AgentConfig(
     memory_enabled=True,
     memory_window=10,
     longterm_memory=True,
+    rag_enabled=True,
     streaming=True,
 )
 

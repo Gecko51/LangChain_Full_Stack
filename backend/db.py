@@ -268,3 +268,71 @@ def prune_archives(username: str, keep: int) -> None:
             client.table("chat_archives").delete().in_("id", ids).execute()
     except Exception:
         pass
+
+
+# ----- RAG documents (pgvector semantic search over the user's knowledge) -----
+
+
+def insert_rag_chunks(rows: list[dict]) -> bool:
+    """Insert chunk rows {username, title, content, embedding}. Embedding = list[float]."""
+    client = _get_client()
+    if not client or not rows:
+        return False
+    try:
+        client.table("rag_documents").insert(rows).execute()
+        return True
+    except Exception:
+        return False
+
+
+def match_rag(username: str, query_embedding: list[float], k: int = 5) -> list[dict]:
+    """Top-k chunks for a user by cosine similarity (via the match_rag_documents RPC)."""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        resp = client.rpc(
+            "match_rag_documents",
+            {
+                "query_embedding": query_embedding,
+                "match_username": username,
+                "match_count": k,
+            },
+        ).execute()
+        return resp.data or []
+    except Exception:
+        return []
+
+
+def list_rag_sources(username: str) -> list[dict]:
+    """The user's documents grouped by title, with a chunk count each."""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        resp = (
+            client.table("rag_documents")
+            .select("title")
+            .eq("username", username)
+            .execute()
+        )
+        counts: dict[str, int] = {}
+        for r in resp.data or []:
+            counts[r["title"]] = counts.get(r["title"], 0) + 1
+        return [{"title": t, "chunks": n} for t, n in sorted(counts.items())]
+    except Exception:
+        return []
+
+
+def delete_rag_source(username: str, title: str) -> bool:
+    """Delete all chunks of one document (by title) for a user."""
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("rag_documents").delete().eq("username", username).eq(
+            "title", title
+        ).execute()
+        return True
+    except Exception:
+        return False

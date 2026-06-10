@@ -12,7 +12,14 @@ export interface AgentConfig {
   memory_enabled: boolean;
   memory_window: number;
   longterm_memory: boolean; // durable cross-session facts + the `remember` tool
+  rag_enabled: boolean; // search_knowledge_base over uploaded documents
   streaming: boolean;
+}
+
+// A document in the RAG knowledge base, grouped by title with its chunk count.
+export interface RagDocument {
+  title: string;
+  chunks: number;
 }
 
 // A long-term memory: a durable fact the agent recalls across sessions.
