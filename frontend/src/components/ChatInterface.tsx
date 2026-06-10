@@ -4,6 +4,7 @@ import { Eraser, MessageSquarePlus, Send, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MessageBubble } from "@/components/MessageBubble";
+import { PromptVariablesDialog } from "@/components/PromptVariablesDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,6 +12,7 @@ import { useAgentStream } from "@/hooks/useAgentStream";
 import { useChatArchives } from "@/hooks/useChatArchives";
 import { useSettings } from "@/hooks/useSettings";
 import { clearSession } from "@/lib/api";
+import { parseVars } from "@/lib/promptVars";
 import { cn } from "@/lib/utils";
 import type { AgentStatus, ChatMessage, CustomPrompt, ToolCall } from "@/types/agent";
 
@@ -37,6 +39,8 @@ export function ChatInterface() {
   const [input, setInput] = useState("");
   // A saved prompt picked from the slash menu — shown as a /name chip, expanded on send.
   const [activePrompt, setActivePrompt] = useState<CustomPrompt | null>(null);
+  // A picked prompt that still has {{variables}} to fill before it can become active.
+  const [varPrompt, setVarPrompt] = useState<CustomPrompt | null>(null);
   const [status, setStatus] = useState<AgentStatus>("idle");
   const assistantIdRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -56,9 +60,14 @@ export function ChatInterface() {
   const showSlash = slashQuery !== null && slashMatches.length > 0;
 
   const selectPrompt = (prompt: CustomPrompt) => {
-    setActivePrompt(prompt); // show a /name chip instead of pasting the full content
     setInput("");
-    inputRef.current?.focus();
+    // If the prompt has {{variables}}, collect them first; otherwise activate it directly.
+    if (parseVars(prompt.content).length > 0) {
+      setVarPrompt(prompt);
+    } else {
+      setActivePrompt(prompt); // show a /name chip instead of pasting the full content
+      inputRef.current?.focus();
+    }
   };
 
   // Patch the in-flight assistant message by id.
@@ -273,7 +282,7 @@ export function ChatInterface() {
                 <button
                   type="button"
                   onClick={() => setActivePrompt(null)}
-                  title="Remove prompt"
+                  title={`${activePrompt.content}\n\n(click to remove)`}
                   className="text-primary bg-primary/15 hover:bg-primary/25 mt-0.5 inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs transition-colors"
                 >
                   /{activePrompt.name}
@@ -322,6 +331,17 @@ export function ChatInterface() {
           </div>
         </div>
       </div>
+
+      {/* Fill {{variables}} for a picked prompt, then activate it as a /name chip. */}
+      <PromptVariablesDialog
+        prompt={varPrompt}
+        onResolve={(resolved) => {
+          setActivePrompt(resolved);
+          setVarPrompt(null);
+          inputRef.current?.focus();
+        }}
+        onCancel={() => setVarPrompt(null)}
+      />
     </div>
   );
 }
