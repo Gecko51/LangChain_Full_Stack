@@ -4,6 +4,7 @@ import { KeyRound, Loader2, Maximize2, Plus, RefreshCw, Trash2, X } from "lucide
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { ConnectorCatalog } from "@/components/ConnectorCatalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useSettings } from "@/hooks/useSettings";
 import { fetchMcpTools } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { MCPServer, McpServerStatus, McpTransport } from "@/types/agent";
 
 const JSON_PLACEHOLDER = `{
@@ -103,8 +105,27 @@ function parseServers(text: string): MCPServer[] {
 }
 
 export function MCPPanel() {
-  const { settings, addMcpServer, removeMcpServer, toggleMcpServer } = useSettings();
+  const { settings, addMcpServer, removeMcpServer, toggleMcpServer, setAllowedTools } =
+    useSettings();
   const servers = settings.mcp_servers;
+
+  // A tool is allowed when the server has no allowlist (null = all) or it's listed.
+  const isToolOn = (s: MCPServer, tool: string) =>
+    s.allowed_tools == null || s.allowed_tools.includes(tool);
+
+  // Toggle one tool's permission; collapse "all on" back to null for a clean state.
+  const toggleTool = async (s: MCPServer, allTools: string[], tool: string) => {
+    const current = s.allowed_tools == null ? allTools : s.allowed_tools;
+    const next = current.includes(tool)
+      ? current.filter((t) => t !== tool)
+      : [...current, tool];
+    const allOn = allTools.length > 0 && allTools.every((t) => next.includes(t));
+    try {
+      await setAllowedTools(s.name, allOn ? null : next);
+    } catch (e) {
+      toast.error(`Failed: ${(e as Error).message}`);
+    }
+  };
 
   const [status, setStatus] = useState<McpServerStatus[]>([]);
   const [loadingTools, setLoadingTools] = useState(false);
@@ -236,7 +257,18 @@ export function MCPPanel() {
         </Button>
       </div>
 
-      {/* ---- Server list ---- */}
+      {/* ---- One-click connector catalog ---- */}
+      <ConnectorCatalog
+        onConnect={async (s) => {
+          await addMcpServer(s);
+          refreshTools();
+        }}
+      />
+
+      {/* ---- Connected servers ---- */}
+      <div className="space-y-1.5 border-t pt-3">
+        <Label className="text-xs">Connected servers</Label>
+      </div>
       <div className="max-h-48 space-y-2 overflow-y-auto">
         {servers.length === 0 ? (
           <p className="text-muted-foreground text-xs">No MCP servers yet. Add one below.</p>
@@ -288,12 +320,32 @@ export function MCPPanel() {
                       {st.error}
                     </p>
                   ) : st.tools.length ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {st.tools.map((t) => (
-                        <Badge key={t} variant="secondary" className="text-[10px]">
-                          {t}
-                        </Badge>
-                      ))}
+                    <div className="mt-1.5 space-y-1">
+                      <p className="text-muted-foreground text-[10px]">
+                        Tools — click to allow / deny:
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {st.tools.map((t) => {
+                          const on = isToolOn(s, t);
+                          const bare = t.includes("__") ? t.slice(t.indexOf("__") + 2) : t;
+                          return (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => toggleTool(s, st.tools, t)}
+                              title={on ? "Allowed — click to deny" : "Denied — click to allow"}
+                              className={cn(
+                                "rounded px-1.5 py-0.5 font-mono text-[10px] transition-colors",
+                                on
+                                  ? "bg-primary/15 text-primary hover:bg-primary/25"
+                                  : "bg-muted text-muted-foreground line-through hover:bg-muted/70",
+                              )}
+                            >
+                              {bare}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
                     <p className="text-muted-foreground mt-1 text-[11px]">

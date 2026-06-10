@@ -23,6 +23,7 @@ import auth  # noqa: E402
 import db  # noqa: E402
 from agent import fetch_generation_cost, stream_chat  # noqa: E402
 from config import AgentConfig, config_store  # noqa: E402
+from connectors import CONNECTOR_CATALOG  # noqa: E402
 from mcp_manager import discover  # noqa: E402
 from schemas import ChatRequest  # noqa: E402
 from sessions import session_store  # noqa: E402
@@ -281,6 +282,12 @@ def set_mcp_allowed_tools(
 async def mcp_tools(user: str = Depends(auth.require_auth)) -> list[dict]:
     """Connect to each of the user's enabled MCP servers and report its tools."""
     return await discover(settings_store.get(user).mcp_servers)
+
+
+@protected.get("/connectors")
+def list_connectors(user: str = Depends(auth.require_auth)) -> list[dict]:
+    """Curated MCP connector catalog — templates for one-click 'Connect <tool>' cards."""
+    return CONNECTOR_CATALOG
 
 
 # ----- Chat -----

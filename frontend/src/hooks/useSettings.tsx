@@ -19,6 +19,7 @@ import {
   deletePrompt as apiDeletePrompt,
   fetchSettings as apiFetchSettings,
   setApiKey as apiSetApiKey,
+  setMcpAllowedTools as apiSetMcpAllowedTools,
   toggleMcpServer as apiToggleMcpServer,
 } from "@/lib/api";
 import type { AppSettings, CustomPrompt, MCPServer } from "@/types/agent";
@@ -41,6 +42,7 @@ interface SettingsContextValue {
   addMcpServer: (server: MCPServer) => Promise<void>;
   removeMcpServer: (name: string) => Promise<void>;
   toggleMcpServer: (name: string) => Promise<void>;
+  setAllowedTools: (name: string, allowed: string[] | null) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -81,6 +83,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const toggleMcpServer = useCallback(async (name: string) => {
     setSettings(await apiToggleMcpServer(name));
   }, []);
+  const setAllowedTools = useCallback(
+    async (name: string, allowed: string[] | null) => {
+      setSettings(await apiSetMcpAllowedTools(name, allowed));
+    },
+    [],
+  );
 
   return (
     <SettingsContext.Provider
@@ -94,6 +102,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         addMcpServer,
         removeMcpServer,
         toggleMcpServer,
+        setAllowedTools,
       }}
     >
       {children}

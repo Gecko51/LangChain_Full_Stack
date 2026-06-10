@@ -91,6 +91,30 @@ export interface MCPServer {
   allowed_tools?: string[] | null; // per-tool allowlist (namespaced); null = all
 }
 
+// ----- Connector catalog (one-click MCP setup) -----
+
+export interface ConnectorInput {
+  key: string;
+  label: string;
+  kind: "env" | "header" | "arg";
+  secret?: boolean;
+  default?: string;
+  help_url?: string;
+}
+
+export interface Connector {
+  id: string;
+  label: string;
+  category: string;
+  description: string;
+  transport: McpTransport;
+  command?: string | null;
+  base_args: string[];
+  url?: string | null;
+  inputs: ConnectorInput[];
+  help_url: string;
+}
+
 // Discovery result from GET /mcp/tools (one entry per server).
 export interface McpServerStatus {
   name: string;

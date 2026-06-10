@@ -3,6 +3,7 @@ import type {
   AgentConfig,
   AppSettings,
   ChatArchive,
+  Connector,
   CustomPrompt,
   MCPServer,
   McpServerStatus,
@@ -252,6 +253,12 @@ export async function setMcpAllowedTools(
 export async function fetchMcpTools(): Promise<McpServerStatus[]> {
   const res = await apiFetch("/mcp/tools");
   if (!res.ok) throw new Error(`GET /mcp/tools failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchConnectors(): Promise<Connector[]> {
+  const res = await apiFetch("/connectors");
+  if (!res.ok) throw new Error(`GET /connectors failed: ${res.status}`);
   return res.json();
 }
 
