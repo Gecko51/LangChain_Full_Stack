@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from typing import AsyncIterator
 
 import httpx
@@ -27,6 +28,7 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import BaseTool
 
+import db
 import rag
 from config import AgentConfig
 from mcp_manager import get_mcp_tools
@@ -167,15 +169,33 @@ async def stream_chat(
     message: str,
     session_id: str,
     username: str,
+    project_id: int | None = None,
 ) -> AsyncIterator[dict]:
     """Yield SSE events for one chat turn: token / tool_start / tool_end / done / error."""
+    turn_started = time.time()  # lets append_turn drop a persist for a deleted session
     try:
         key = _resolve_api_key(settings.openrouter_api_key)
         tools = await gather_tools(config, settings.mcp_servers, username, key)
+        # Project instructions: when the conversation belongs to a project, append its
+        # instructions. The client's id is a hint; the STORED session row is the
+        # fallback source of truth (covers a turn fired right after a reload, before
+        # the client knew the project). get_project is scoped by username, so a
+        # forged/guessed id from another account resolves to None (no cross-user leak).
+        effective_project_id = project_id or db.get_session_project(username, session_id)
+        project = (
+            db.get_project(username, effective_project_id)
+            if effective_project_id
+            else None
+        )
+        project_block = (
+            f"\n\n# Project: {project['name']}\n{project['instructions']}"
+            if project and project.get("instructions")
+            else ""
+        )
         # Long-term memory: prepend saved facts to the system prompt so the agent
         # "knows" them automatically (bounded by a char budget for flat cost).
         memories = memory_store.get(username) if config.longterm_memory else []
-        system_prompt = config.system_prompt + memory_preamble(memories)
+        system_prompt = config.system_prompt + project_block + memory_preamble(memories)
         agent = build_agent(
             config, tools, settings.openrouter_api_key, system_prompt=system_prompt
         )
@@ -270,8 +290,11 @@ async def stream_chat(
 
         content = "".join(final_parts)
         # Persist the turn: text drives the agent's replay, tool_calls re-hydrate the UI.
+        # Only the OWNERSHIP-VALIDATED project id is stored (a forged id became None).
         session_store.append_turn(
-            username, session_id, message, content, list(turn_tool_calls.values())
+            username, session_id, message, content, list(turn_tool_calls.values()),
+            project_id=project["id"] if project else None,
+            turn_started=turn_started,
         )
         persisted = True
         # Token usage (cost is fetched lazily by the client via /chat/cost).
@@ -300,4 +323,6 @@ async def stream_chat(
             session_store.append_turn(
                 username, session_id, message, "".join(final_parts),
                 list(turn_tool_calls.values()),
+                project_id=project["id"] if project else None,
+                turn_started=turn_started,
             )

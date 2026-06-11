@@ -10,6 +10,9 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=32000)
     # Conversation id; lets several chats keep independent histories.
     session_id: str = Field(default="default", max_length=128)
+    # Project this conversation belongs to (None = unassigned). Ownership is verified
+    # server-side before the project's instructions are applied.
+    project_id: int | None = None
 
 
 class ToolInfo(BaseModel):

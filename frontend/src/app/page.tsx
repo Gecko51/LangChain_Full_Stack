@@ -3,17 +3,18 @@
 import { LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { AgentConfig } from "@/components/AgentConfig";
 import { AuthScreen } from "@/components/AuthScreen";
 import { ChatInterface } from "@/components/ChatInterface";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { WarmupSplash } from "@/components/WarmupSplash";
+import { WorkspacePanel } from "@/components/WorkspacePanel";
 import { Button } from "@/components/ui/button";
 import { AgentConfigProvider } from "@/hooks/useAgentConfig";
 import { useAuth } from "@/hooks/useAuth";
 import { useBackendWarmup } from "@/hooks/useBackendWarmup";
 import { SettingsProvider } from "@/hooks/useSettings";
+import { WorkspaceProvider } from "@/hooks/useWorkspace";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
@@ -87,6 +88,7 @@ export default function Home() {
   return (
     <SettingsProvider>
       <AgentConfigProvider>
+        <WorkspaceProvider>
           <div className="relative flex h-dvh flex-col overflow-hidden">
           {/* Subtle apple-green glow behind everything. */}
           <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(60%_45%_at_50%_0%,oklch(0.84_0.16_124/0.12),transparent)]" />
@@ -127,13 +129,13 @@ export default function Home() {
                 key={t}
                 onClick={() => setTab(t)}
                 className={cn(
-                  "flex-1 py-2 text-sm font-medium capitalize transition-colors",
+                  "flex-1 py-2 text-sm font-medium transition-colors",
                   tab === t
                     ? "border-primary text-foreground border-b-2"
                     : "text-muted-foreground",
                 )}
               >
-                {t}
+                {t === "config" ? "Workspace" : "Chat"}
               </button>
             ))}
           </div>
@@ -147,7 +149,7 @@ export default function Home() {
                 tab === "config" ? "block" : "hidden",
               )}
             >
-              <AgentConfig />
+              <WorkspacePanel onNavigate={() => setTab("chat")} />
             </aside>
 
             {/* Drag-to-resize divider — handle appears on hover (lg only). */}
@@ -191,6 +193,7 @@ export default function Home() {
             </section>
           </main>
           </div>
+        </WorkspaceProvider>
       </AgentConfigProvider>
     </SettingsProvider>
   );

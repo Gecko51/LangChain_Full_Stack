@@ -116,35 +116,65 @@ def _session_title(messages: list) -> str:
     return "New conversation"
 
 
-def save_session(username: str, session_id: str, messages: list) -> bool:
+def save_session(
+    username: str, session_id: str, messages: list, project_id: int | None = None
+) -> bool:
     client = _get_client()
     if not client:
         return False
     try:
+        row: dict = {
+            "username": username,
+            "session_id": session_id,
+            "messages": messages,
+            "title": _session_title(messages),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # Only SET project_id when we actually have one: on conflict, PostgREST only
+        # updates the provided columns, so omitting the key PRESERVES the stored
+        # assignment. A None here means "unknown" (reload race, transient lookup
+        # failure) — never "unassign" (only delete_project unassigns, explicitly).
+        if project_id is not None:
+            row["project_id"] = project_id
         client.table("chat_sessions").upsert(
-            {
-                "username": username,
-                "session_id": session_id,
-                "messages": messages,
-                "title": _session_title(messages),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            },
-            on_conflict="username,session_id",
+            row, on_conflict="username,session_id"
         ).execute()
         return True
     except Exception:
         return False
 
 
+def get_session_project(username: str, session_id: str) -> int | None:
+    """The project a stored conversation belongs to (None if unassigned/unknown).
+    Lets the backend apply project instructions even when the client couldn't send
+    the id (e.g. a turn fired right after a reload, before /sessions resolved)."""
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        resp = (
+            client.table("chat_sessions")
+            .select("project_id")
+            .eq("username", username)
+            .eq("session_id", session_id)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows[0]["project_id"] if rows else None
+    except Exception:
+        return None
+
+
 def list_sessions(username: str) -> list[dict]:
-    """A user's conversations (session_id, title, updated_at), most recent first."""
+    """A user's conversations (session_id, title, updated_at, project_id), newest first."""
     client = _get_client()
     if not client:
         return []
     try:
         resp = (
             client.table("chat_sessions")
-            .select("session_id,title,updated_at")
+            .select("session_id,title,updated_at,project_id")
             .eq("username", username)
             .order("updated_at", desc=True)
             .execute()
@@ -152,6 +182,90 @@ def list_sessions(username: str) -> list[dict]:
         return resp.data or []
     except Exception:
         return []
+
+
+# ----- Projects (group conversations, with optional per-project instructions) -----
+
+
+def list_projects(username: str) -> list[dict]:
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        resp = (
+            client.table("projects")
+            .select("id,name,instructions,created_at")
+            .eq("username", username)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return resp.data or []
+    except Exception:
+        return []
+
+
+def get_project(username: str, project_id: int) -> dict | None:
+    """One project — scoped by username so a user can never read another's project
+    (ids are sequential and therefore guessable)."""
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        resp = (
+            client.table("projects")
+            .select("id,name,instructions")
+            .eq("username", username)
+            .eq("id", project_id)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def insert_project(username: str, name: str, instructions: str) -> bool:
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("projects").insert(
+            {"username": username, "name": name, "instructions": instructions}
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
+def update_project(username: str, project_id: int, name: str, instructions: str) -> bool:
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("projects").update(
+            {"name": name, "instructions": instructions}
+        ).eq("username", username).eq("id", project_id).execute()
+        return True
+    except Exception:
+        return False
+
+
+def delete_project(username: str, project_id: int) -> bool:
+    """Delete a project; its conversations survive, just unassigned."""
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("chat_sessions").update({"project_id": None}).eq(
+            "username", username
+        ).eq("project_id", project_id).execute()
+        client.table("projects").delete().eq("username", username).eq(
+            "id", project_id
+        ).execute()
+        return True
+    except Exception:
+        return False
 
 
 def delete_session(username: str, session_id: str) -> bool:

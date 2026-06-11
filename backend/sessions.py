@@ -11,6 +11,8 @@ text-only messages — a clean, always-valid sequence with no orphaned tool call
 """
 from __future__ import annotations
 
+import time
+
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 import db
@@ -28,6 +30,10 @@ class SessionStore:
     def __init__(self) -> None:
         self._sessions: dict[tuple[str, str], list[dict]] = {}
         self._hydrated: set[tuple[str, str]] = set()
+        # key -> when it was last cleared/deleted. Lets append_turn drop a persist for
+        # a turn that STARTED before the user deleted the conversation (otherwise the
+        # late write would silently re-create the just-deleted row).
+        self._cleared: dict[tuple[str, str], float] = {}
 
     def _ensure_loaded(self, username: str, session_id: str) -> None:
         """Load a session from Supabase the first time it's touched."""
@@ -65,24 +71,33 @@ class SessionStore:
         user_text: str,
         assistant_text: str,
         tool_calls: list[dict] | None = None,
+        project_id: int | None = None,
+        turn_started: float | None = None,
     ) -> None:
         """Append one user+assistant turn and persist the session (best-effort).
-        ``tool_calls`` is a UI list of ``{id, name, input, output}`` (display only)."""
-        self._ensure_loaded(username, session_id)
+        ``tool_calls`` is a UI list of ``{id, name, input, output}`` (display only);
+        ``project_id`` assigns the conversation to a project (sidebar grouping).
+        A turn whose conversation was deleted AFTER it started is dropped — its late
+        persist must not resurrect the deleted row. (A normal turn after "Clear
+        history" started AFTER the clear, so it persists as expected.)"""
         key = (username, session_id)
+        if turn_started is not None and self._cleared.get(key, 0.0) > turn_started:
+            return
+        self._ensure_loaded(username, session_id)
         lst = self._sessions.setdefault(key, [])
         lst.append({"role": "human", "content": user_text})
         ai: dict = {"role": "ai", "content": assistant_text}
         if tool_calls:
             ai["tool_calls"] = tool_calls
         lst.append(ai)
-        db.save_session(username, session_id, lst)
+        db.save_session(username, session_id, lst, project_id)
 
     def clear(self, username: str, session_id: str) -> None:
         """Forget a session's history (memory + Supabase)."""
         key = (username, session_id)
         self._sessions.pop(key, None)
         self._hydrated.discard(key)
+        self._cleared[key] = time.time()  # tombstone: see append_turn
         db.delete_session(username, session_id)
 
 

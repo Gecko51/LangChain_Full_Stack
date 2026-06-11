@@ -8,6 +8,7 @@ import type {
   McpServerStatus,
   Memory,
   ModelInfo,
+  Project,
   RagDocument,
   ScheduledTask,
   SessionSummary,
@@ -134,6 +135,47 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
   const res = await apiFetch("/sessions");
   if (!res.ok) throw new Error(`GET /sessions failed: ${res.status}`);
   return (await res.json()).sessions as SessionSummary[];
+}
+
+// ----- Projects (folders of conversations, with optional instructions) -----
+
+export async function fetchProjects(): Promise<Project[]> {
+  const res = await apiFetch("/projects");
+  if (!res.ok) throw new Error(`GET /projects failed: ${res.status}`);
+  return (await res.json()).projects as Project[];
+}
+
+export async function createProject(
+  name: string,
+  instructions: string,
+): Promise<Project[]> {
+  const res = await apiFetch("/projects", {
+    method: "POST",
+    headers: JSON_CT,
+    body: JSON.stringify({ name, instructions }),
+  });
+  if (!res.ok) throw new Error(await detail(res));
+  return (await res.json()).projects as Project[];
+}
+
+export async function updateProject(
+  id: number,
+  name: string,
+  instructions: string,
+): Promise<Project[]> {
+  const res = await apiFetch(`/projects/${id}`, {
+    method: "PUT",
+    headers: JSON_CT,
+    body: JSON.stringify({ name, instructions }),
+  });
+  if (!res.ok) throw new Error(await detail(res));
+  return (await res.json()).projects as Project[];
+}
+
+export async function deleteProject(id: number): Promise<Project[]> {
+  const res = await apiFetch(`/projects/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`DELETE /projects failed: ${res.status}`);
+  return (await res.json()).projects as Project[];
 }
 
 // The session's messages (with tool calls) — used to re-hydrate the chat on reload.

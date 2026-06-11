@@ -210,6 +210,29 @@ def test_rag_search_tool_is_user_scoped_and_fenced():
     assert "\n# SYSTEM" not in out
 
 
+def test_deleted_session_drops_late_persist():
+    """A turn that STARTED before its conversation was deleted must not resurrect the
+    row; a turn started AFTER a clear (e.g. 'Clear history' then keep chatting) must
+    persist normally."""
+    import time
+
+    from sessions import SessionStore
+
+    store = SessionStore()
+    # Turn starts, then the user deletes the conversation mid-stream.
+    t0 = time.time()
+    time.sleep(0.01)
+    store.clear("u", "s1")
+    store.append_turn("u", "s1", "hi", "partial answer", turn_started=t0)
+    assert store.messages_ui("u", "s1") == []  # late persist dropped
+
+    # Clear history, then a NEW turn (started after the clear) — must persist.
+    store.clear("u", "s2")
+    time.sleep(0.01)
+    store.append_turn("u", "s2", "hi", "fresh answer", turn_started=time.time())
+    assert len(store.messages_ui("u", "s2")) == 2
+
+
 def test_scheduled_cron_helpers():
     from datetime import datetime, timezone
 

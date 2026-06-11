@@ -34,6 +34,16 @@ export interface SessionSummary {
   session_id: string;
   title: string | null;
   updated_at: string;
+  project_id: number | null; // the project it belongs to (null = unassigned)
+}
+
+// A project: a folder of conversations with optional instructions appended to the
+// system prompt of its chats (like Claude/ChatGPT projects).
+export interface Project {
+  id: number;
+  name: string;
+  instructions: string;
+  created_at: string;
 }
 
 // A scheduled background agent run (one scheduled_tasks row).

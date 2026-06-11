@@ -92,6 +92,11 @@ class RagBody(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)
 
 
+class ProjectBody(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    instructions: str = Field(default="", max_length=8000)
+
+
 def _public_mcp_server(m: MCPServer) -> dict:
     """An MCP server, safe to send to the client: credential VALUES are stripped, only
     the key names are exposed (write-only credential pattern, like the API key hint)."""
@@ -455,7 +460,9 @@ async def chat(req: ChatRequest, user: str = Depends(auth.require_auth)):
     config = config_store.get(user)
     settings = settings_store.get(user)
     return EventSourceResponse(
-        stream_chat(config, settings, req.message, req.session_id, user)
+        stream_chat(
+            config, settings, req.message, req.session_id, user, req.project_id
+        )
     )
 
 
@@ -472,6 +479,46 @@ async def chat_cost(generation_id: str, user: str = Depends(auth.require_auth)) 
 def get_sessions(user: str = Depends(auth.require_auth)) -> dict:
     """The user's conversations (session_id, title, updated_at) for the sidebar."""
     return {"sessions": db.list_sessions(user)}
+
+
+# ----- Projects (group conversations, like Claude/ChatGPT projects) -----
+
+
+@protected.get("/projects")
+def list_projects(user: str = Depends(auth.require_auth)) -> dict:
+    """The user's projects (newest first)."""
+    return {"projects": db.list_projects(user)}
+
+
+MAX_PROJECTS_PER_USER = 50  # bound DB growth — registration is open
+
+
+@protected.post("/projects")
+def create_project(body: ProjectBody, user: str = Depends(auth.require_auth)) -> dict:
+    """Create a project (a folder of conversations, with optional instructions)."""
+    if len(db.list_projects(user)) >= MAX_PROJECTS_PER_USER:
+        raise HTTPException(
+            status_code=429, detail="Too many projects — delete one first."
+        )
+    db.insert_project(user, body.name.strip(), body.instructions.strip())
+    return {"projects": db.list_projects(user)}
+
+
+@protected.put("/projects/{project_id}")
+def update_project(
+    project_id: int, body: ProjectBody, user: str = Depends(auth.require_auth)
+) -> dict:
+    """Rename a project / edit its instructions (scoped to the owner)."""
+    db.update_project(user, project_id, body.name.strip(), body.instructions.strip())
+    return {"projects": db.list_projects(user)}
+
+
+@protected.delete("/projects/{project_id}")
+def delete_project(project_id: int, user: str = Depends(auth.require_auth)) -> dict:
+    """Delete a project; its conversations survive, just unassigned."""
+    if not db.delete_project(user, project_id):
+        raise HTTPException(status_code=502, detail="Could not delete the project.")
+    return {"projects": db.list_projects(user)}
 
 
 @protected.get("/sessions/{session_id}")

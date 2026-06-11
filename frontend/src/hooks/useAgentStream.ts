@@ -31,7 +31,7 @@ export function useAgentStream(options: UseAgentStreamOptions) {
   }, []);
 
   const send = useCallback(
-    async (message: string, sessionId: string) => {
+    async (message: string, sessionId: string, projectId: number | null = null) => {
       cancel();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -41,7 +41,11 @@ export function useAgentStream(options: UseAgentStreamOptions) {
         const res = await apiFetch("/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, session_id: sessionId }),
+          body: JSON.stringify({
+            message,
+            session_id: sessionId,
+            project_id: projectId,
+          }),
           signal: controller.signal,
         });
         if (!res.ok || !res.body) {
