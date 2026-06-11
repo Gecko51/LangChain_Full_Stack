@@ -36,7 +36,7 @@ from sessions import session_store  # noqa: E402
 from settings import CustomPrompt, MCPServer, settings_store  # noqa: E402
 from tools import list_tools  # noqa: E402
 
-app = FastAPI(title="Agent Playground API", version="1.0.0")
+app = FastAPI(title="Agent Playground API", version="1.1.0")
 
 # --- CORS: allow the local frontend + the configured FRONTEND_URL(s) ---
 # FRONTEND_URL may be a comma-separated list (e.g. prod + preview domains).
