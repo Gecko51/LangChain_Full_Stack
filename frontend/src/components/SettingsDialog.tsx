@@ -95,7 +95,7 @@ export function SettingsDialog() {
           <Settings2 className="size-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -105,8 +105,8 @@ export function SettingsDialog() {
 
         {/* min-w-0: this is a grid child of DialogContent; without it a long, non-wrapping
             prompt line forces the dialog wider than its max-width. */}
-        <Tabs defaultValue="api-key" className="min-w-0">
-          <TabsList className="w-full">
+        <Tabs defaultValue="api-key" className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <TabsList className="w-full shrink-0">
             <TabsTrigger value="api-key" className="flex-1">
               API Key
             </TabsTrigger>
@@ -119,7 +119,10 @@ export function SettingsDialog() {
           </TabsList>
 
           {/* ---- API key ---- */}
-          <TabsContent value="api-key" className="space-y-3 pt-2">
+          <TabsContent
+            value="api-key"
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto pt-2"
+          >
             <div className="text-muted-foreground flex items-center gap-2 text-xs">
               <KeyRound className="size-3.5 shrink-0" />
               {settings.has_api_key ? (
@@ -161,7 +164,10 @@ export function SettingsDialog() {
           </TabsContent>
 
           {/* ---- Custom prompts ---- */}
-          <TabsContent value="prompts" className="space-y-3 pt-2">
+          <TabsContent
+            value="prompts"
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto pt-2"
+          >
             <div className="max-h-56 space-y-2 overflow-y-auto">
               {settings.custom_prompts.length === 0 ? (
                 <p className="text-muted-foreground text-xs">
@@ -247,7 +253,7 @@ export function SettingsDialog() {
           </TabsContent>
 
           {/* ---- MCP servers ---- */}
-          <TabsContent value="mcp">
+          <TabsContent value="mcp" className="min-h-0 flex-1 overflow-y-auto pt-1">
             <MCPPanel />
           </TabsContent>
         </Tabs>
