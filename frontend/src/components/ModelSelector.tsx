@@ -54,7 +54,10 @@ export function ModelSelector({
       <SelectTrigger className="w-full font-mono text-xs">
         <SelectValue placeholder={loading ? "Loading models…" : "Select a model"} />
       </SelectTrigger>
-      <SelectContent className="max-h-72">
+      {/* position="popper": collision-aware — the trigger sits at the BOTTOM of the
+          sidebar, so the list must flip upward instead of overflowing the screen
+          (the default "item-aligned" mode has no collision detection). */}
+      <SelectContent className="max-h-72" position="popper">
         {!hasValue && value ? (
           <SelectItem value={value} className="font-mono text-xs">
             {value}
